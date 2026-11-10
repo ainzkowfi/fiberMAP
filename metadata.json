@@ -1,0 +1,6 @@
+{
+  "name": "fiberMAP",
+  "description": "Offline fiber line mapping, cut & repair tracking, Line Stats analytics, and OTDR locator for Agusan del Sur.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
