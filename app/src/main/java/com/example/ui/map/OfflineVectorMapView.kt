@@ -216,22 +216,26 @@ fun OfflineVectorMapView(
             // 4. Draw Municipality landmarks
             for (muni in AgusanDelSurData.MUNICIPALITIES) {
                 val pt = geoToScreen(muni.point, cameraCenter, zoomLevel, width, height)
-                if (pt.x in -50f..(width + 50f) && pt.y in -50f..(height + 50f)) {
+                if (pt.x in -20f..(width + 20f) && pt.y in -20f..(height + 20f)) {
                     drawCircle(
                         color = onSurfaceVariantColor.copy(alpha = 0.7f),
                         radius = if (muni.isCapitalOrHub) 4.5.dp.toPx() else 3.dp.toPx(),
                         center = pt
                     )
-                    drawText(
-                        textMeasurer = textMeasurer,
-                        text = muni.name,
-                        topLeft = Offset(pt.x + 8.dp.toPx(), pt.y - 8.dp.toPx()),
-                        style = TextStyle(
-                            fontSize = if (muni.isCapitalOrHub) 12.sp else 10.sp,
-                            fontWeight = if (muni.isCapitalOrHub) FontWeight.Bold else FontWeight.Medium,
-                            color = onSurfaceVariantColor
+                    val textX = pt.x + 8.dp.toPx()
+                    val textY = pt.y - 8.dp.toPx()
+                    if (textX in 0f..(width - 80f) && textY in 0f..(height - 20f)) {
+                        drawText(
+                            textMeasurer = textMeasurer,
+                            text = muni.name,
+                            topLeft = Offset(textX, textY),
+                            style = TextStyle(
+                                fontSize = if (muni.isCapitalOrHub) 12.sp else 10.sp,
+                                fontWeight = if (muni.isCapitalOrHub) FontWeight.Bold else FontWeight.Medium,
+                                color = onSurfaceVariantColor
+                            )
                         )
-                    )
+                    }
                 }
             }
 

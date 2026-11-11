@@ -80,8 +80,14 @@ class FiberRepository(private val db: FiberDatabase) {
 
     suspend fun deleteLine(lineId: String) {
         val now = System.currentTimeMillis()
-        lineDao.softDeleteLine(lineId, now)
-        pinDao.softDeletePinsForLine(lineId, now)
+        try {
+            lineDao.softDeleteLine(lineId, now)
+            pinDao.softDeletePinsForLine(lineId, now)
+            pinEventDao.softDeleteEventsForLine(lineId, now)
+        } catch (_: Exception) {
+            lineDao.hardDeleteLine(lineId)
+            pinDao.hardDeletePinsForLine(lineId)
+        }
     }
 
     suspend fun dropPin(
@@ -226,7 +232,14 @@ class FiberRepository(private val db: FiberDatabase) {
     }
 
     suspend fun deletePin(pinId: String) {
-        pinDao.softDeletePin(pinId)
+        val now = System.currentTimeMillis()
+        try {
+            pinDao.softDeletePin(pinId, now)
+            pinEventDao.softDeleteEventsForPin(pinId, now)
+        } catch (_: Exception) {
+            pinDao.hardDeletePin(pinId)
+            pinEventDao.hardDeleteEventsForPin(pinId)
+        }
     }
 
     // Converters

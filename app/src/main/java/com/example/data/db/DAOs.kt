@@ -28,6 +28,9 @@ interface LineDao {
 
     @Query("UPDATE lines SET deletedAt = :timestamp, updatedAt = :timestamp WHERE id = :id")
     suspend fun softDeleteLine(id: String, timestamp: Long = System.currentTimeMillis())
+
+    @Query("DELETE FROM lines WHERE id = :id")
+    suspend fun hardDeleteLine(id: String)
 }
 
 @Dao
@@ -61,6 +64,12 @@ interface PinDao {
 
     @Query("UPDATE pins SET deletedAt = :timestamp, updatedAt = :timestamp WHERE lineId = :lineId AND deletedAt IS NULL")
     suspend fun softDeletePinsForLine(lineId: String, timestamp: Long = System.currentTimeMillis())
+
+    @Query("DELETE FROM pins WHERE id = :id")
+    suspend fun hardDeletePin(id: String)
+
+    @Query("DELETE FROM pins WHERE lineId = :lineId")
+    suspend fun hardDeletePinsForLine(lineId: String)
 }
 
 @Dao
@@ -82,6 +91,15 @@ interface PinEventDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEvents(events: List<PinEventEntity>)
+
+    @Query("UPDATE pin_events SET deletedAt = :timestamp WHERE pinId = :pinId AND deletedAt IS NULL")
+    suspend fun softDeleteEventsForPin(pinId: String, timestamp: Long = System.currentTimeMillis())
+
+    @Query("UPDATE pin_events SET deletedAt = :timestamp WHERE pinId IN (SELECT id FROM pins WHERE lineId = :lineId) AND deletedAt IS NULL")
+    suspend fun softDeleteEventsForLine(lineId: String, timestamp: Long = System.currentTimeMillis())
+
+    @Query("DELETE FROM pin_events WHERE pinId = :pinId")
+    suspend fun hardDeleteEventsForPin(pinId: String)
 }
 
 @Dao
