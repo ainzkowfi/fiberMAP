@@ -134,3 +134,40 @@ interface SettingDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun setSetting(setting: AppSettingEntity)
 }
+
+@Dao
+interface RepairLogDao {
+    @Query("SELECT * FROM repair_logs WHERE deletedAt IS NULL ORDER BY repairTimestamp DESC")
+    fun getAllRepairLogsFlow(): Flow<List<RepairLogEntity>>
+
+    @Query("SELECT * FROM repair_logs WHERE deletedAt IS NULL ORDER BY repairTimestamp DESC")
+    suspend fun getAllRepairLogs(): List<RepairLogEntity>
+
+    @Query("SELECT * FROM repair_logs WHERE lineId = :lineId AND deletedAt IS NULL ORDER BY repairTimestamp DESC")
+    fun getRepairLogsForLineFlow(lineId: String): Flow<List<RepairLogEntity>>
+
+    @Query("SELECT * FROM repair_logs WHERE lineId = :lineId AND deletedAt IS NULL ORDER BY repairTimestamp DESC")
+    suspend fun getRepairLogsForLine(lineId: String): List<RepairLogEntity>
+
+    @Query("SELECT * FROM repair_logs WHERE pinId = :pinId AND deletedAt IS NULL ORDER BY repairTimestamp DESC")
+    fun getRepairLogsForPinFlow(pinId: String): Flow<List<RepairLogEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRepairLog(repairLog: RepairLogEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRepairLogs(repairLogs: List<RepairLogEntity>)
+
+    @Query("UPDATE repair_logs SET deletedAt = :timestamp, updatedAt = :timestamp WHERE id = :id")
+    suspend fun softDeleteRepairLog(id: String, timestamp: Long = System.currentTimeMillis())
+
+    @Query("UPDATE repair_logs SET deletedAt = :timestamp, updatedAt = :timestamp WHERE lineId = :lineId AND deletedAt IS NULL")
+    suspend fun softDeleteRepairLogsForLine(lineId: String, timestamp: Long = System.currentTimeMillis())
+
+    @Query("DELETE FROM repair_logs WHERE lineId = :lineId")
+    suspend fun hardDeleteRepairLogsForLine(lineId: String)
+
+    @Query("DELETE FROM repair_logs WHERE pinId = :pinId")
+    suspend fun hardDeleteRepairLogsForPin(pinId: String)
+}
+

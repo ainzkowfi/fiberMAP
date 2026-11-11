@@ -2,6 +2,9 @@ package com.example.ui.map
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
@@ -103,89 +106,117 @@ fun OfflineVectorMapView(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(Unit) {
-                    detectTapGestures(
-                        onDoubleTap = { tapOffset ->
-                            zoomLevel = (currentZoom + 1.0f).coerceAtMost(18.0f)
-                        },
-                        onLongPress = { longPressOffset ->
-                            val w = size.width.toFloat()
-                            val h = size.height.toFloat()
-                            val geoPoint = screenToGeo(longPressOffset, currentCenter, currentZoom, w, h)
-                            currentOnMapLongClick?.invoke(geoPoint)
-                        },
-                        onTap = { tapOffset ->
-                            val w = size.width.toFloat()
-                            val h = size.height.toFloat()
-                            val center = currentCenter
-                            val zoom = currentZoom
-                            val tappedGeo = screenToGeo(tapOffset, center, zoom, w, h)
+                    awaitPointerEventScope {
+                        while (true) {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val downTime = System.currentTimeMillis()
+                            val downPos = down.position
+                            var totalPan = Offset.Zero
+                            var isTransform = false
 
-                            if (currentIsDrawingMode) {
-                                currentOnMapTapInDrawMode?.invoke(tappedGeo)
-                            } else {
-                                // Hit test pins first (minimum 48dp touch hit target)
-                                val hitRadiusPx = 32.dp.toPx()
-                                var hitPin: FiberPin? = null
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val anyPressed = event.changes.any { it.pressed }
+                                if (!anyPressed) break
 
-                                for (pin in currentPins) {
-                                    val screenPt = geoToScreen(
-                                        geo = GeoPoint(pin.lat, pin.lon),
-                                        center = center,
-                                        zoom = zoom,
-                                        width = w,
-                                        height = h
-                                    )
-                                    val dist = hypot(screenPt.x - tapOffset.x, screenPt.y - tapOffset.y)
-                                    if (dist <= hitRadiusPx) {
-                                        hitPin = pin
-                                        break
+                                if (event.changes.size > 1) {
+                                    isTransform = true
+                                    val zoomChange = event.calculateZoom()
+                                    val panChange = event.calculatePan()
+                                    totalPan += panChange
+
+                                    if (zoomChange != 1.0f || panChange != Offset.Zero) {
+                                        val oldZoom = currentZoom
+                                        val newZoom = (oldZoom * zoomChange).coerceIn(9.0f, 18.0f)
+                                        zoomLevel = newZoom
+
+                                        val scale = 256.0 * 2.0.pow(newZoom.toDouble())
+                                        val cosLat = cos(Math.toRadians(currentCenter.lat)).coerceAtLeast(0.1)
+                                        val dLon = (-panChange.x * 360.0) / (scale * cosLat)
+                                        val dLat = (panChange.y * 360.0) / scale
+
+                                        cameraCenter = GeoPoint(
+                                            (currentCenter.lat + dLat).coerceIn(AgusanDelSurData.BOUNDS.minLat, AgusanDelSurData.BOUNDS.maxLat),
+                                            (currentCenter.lon + dLon).coerceIn(AgusanDelSurData.BOUNDS.minLon, AgusanDelSurData.BOUNDS.maxLon)
+                                        )
+                                        event.changes.forEach { it.consume() }
+                                    }
+                                } else if (event.changes.size == 1) {
+                                    val change = event.changes[0]
+                                    val panChange = change.position - change.previousPosition
+                                    totalPan += panChange
+
+                                    if (!isTransform && totalPan.getDistance() > 8f) {
+                                        isTransform = true
+                                    }
+
+                                    if (isTransform && panChange != Offset.Zero) {
+                                        val scale = 256.0 * 2.0.pow(currentZoom.toDouble())
+                                        val cosLat = cos(Math.toRadians(currentCenter.lat)).coerceAtLeast(0.1)
+                                        val dLon = (-panChange.x * 360.0) / (scale * cosLat)
+                                        val dLat = (panChange.y * 360.0) / scale
+
+                                        cameraCenter = GeoPoint(
+                                            (currentCenter.lat + dLat).coerceIn(AgusanDelSurData.BOUNDS.minLat, AgusanDelSurData.BOUNDS.maxLat),
+                                            (currentCenter.lon + dLon).coerceIn(AgusanDelSurData.BOUNDS.minLon, AgusanDelSurData.BOUNDS.maxLon)
+                                        )
+                                        change.consume()
                                     }
                                 }
+                            }
 
-                                if (hitPin != null) {
-                                    currentOnPinClicked(hitPin)
-                                    return@detectTapGestures
-                                }
+                            // Finger released
+                            val elapsed = System.currentTimeMillis() - downTime
+                            if (!isTransform && totalPan.getDistance() <= 12f) {
+                                val w = size.width.toFloat()
+                                val h = size.height.toFloat()
+                                val tappedGeo = screenToGeo(downPos, currentCenter, currentZoom, w, h)
 
-                                // Hit test lines
-                                var hitLine: FiberLine? = null
-                                var minLineDist = 32.dp.toPx()
+                                if (elapsed >= 500L) {
+                                    currentOnMapLongClick?.invoke(tappedGeo)
+                                } else {
+                                    if (currentIsDrawingMode) {
+                                        currentOnMapTapInDrawMode?.invoke(tappedGeo)
+                                    } else {
+                                        // Hit test pins first
+                                        val hitRadiusPx = 36.dp.toPx()
+                                        var hitPin: FiberPin? = null
 
-                                for (line in currentLines) {
-                                    for (i in 0 until line.vertices.size - 1) {
-                                        val p1 = geoToScreen(line.vertices[i], center, zoom, w, h)
-                                        val p2 = geoToScreen(line.vertices[i + 1], center, zoom, w, h)
-                                        val dist = distanceToSegment(tapOffset, p1, p2)
-                                        if (dist < minLineDist) {
-                                            minLineDist = dist
-                                            hitLine = line
+                                        for (pin in currentPins) {
+                                            val screenPt = geoToScreen(GeoPoint(pin.lat, pin.lon), currentCenter, currentZoom, w, h)
+                                            if (hypot(screenPt.x - downPos.x, screenPt.y - downPos.y) <= hitRadiusPx) {
+                                                hitPin = pin
+                                                break
+                                            }
+                                        }
+
+                                        if (hitPin != null) {
+                                            currentOnPinClicked(hitPin)
+                                        } else {
+                                            // Hit test lines
+                                            var hitLine: FiberLine? = null
+                                            var minLineDist = 32.dp.toPx()
+
+                                            for (line in currentLines) {
+                                                for (i in 0 until line.vertices.size - 1) {
+                                                    val p1 = geoToScreen(line.vertices[i], currentCenter, currentZoom, w, h)
+                                                    val p2 = geoToScreen(line.vertices[i + 1], currentCenter, currentZoom, w, h)
+                                                    val dist = distanceToSegment(downPos, p1, p2)
+                                                    if (dist < minLineDist) {
+                                                        minLineDist = dist
+                                                        hitLine = line
+                                                    }
+                                                }
+                                            }
+
+                                            if (hitLine != null) {
+                                                currentOnLineClicked(hitLine)
+                                            }
                                         }
                                     }
                                 }
-
-                                if (hitLine != null) {
-                                    currentOnLineClicked(hitLine)
-                                }
                             }
                         }
-                    )
-                }
-                .pointerInput(Unit) {
-                    detectTransformGestures(panZoomLock = false) { _, pan, zoomChange, _ ->
-                        val oldZoom = currentZoom
-                        val newZoom = (oldZoom * zoomChange).coerceIn(9.0f, 18.0f)
-                        zoomLevel = newZoom
-
-                        val scale = 256.0 * 2.0.pow(newZoom.toDouble())
-                        val cosLat = cos(Math.toRadians(currentCenter.lat)).coerceAtLeast(0.1)
-
-                        val dLon = (-pan.x * 360.0) / (scale * cosLat)
-                        val dLat = (pan.y * 360.0) / scale
-
-                        cameraCenter = GeoPoint(
-                            (currentCenter.lat + dLat).coerceIn(AgusanDelSurData.BOUNDS.minLat, AgusanDelSurData.BOUNDS.maxLat),
-                            (currentCenter.lon + dLon).coerceIn(AgusanDelSurData.BOUNDS.minLon, AgusanDelSurData.BOUNDS.maxLon)
-                        )
                     }
                 }
         ) {
@@ -222,20 +253,18 @@ fun OfflineVectorMapView(
                         radius = if (muni.isCapitalOrHub) 4.5.dp.toPx() else 3.dp.toPx(),
                         center = pt
                     )
-                    val textX = pt.x + 8.dp.toPx()
-                    val textY = pt.y - 8.dp.toPx()
-                    if (textX in 0f..(width - 80f) && textY in 0f..(height - 20f)) {
-                        drawText(
-                            textMeasurer = textMeasurer,
-                            text = muni.name,
-                            topLeft = Offset(textX, textY),
-                            style = TextStyle(
-                                fontSize = if (muni.isCapitalOrHub) 12.sp else 10.sp,
-                                fontWeight = if (muni.isCapitalOrHub) FontWeight.Bold else FontWeight.Medium,
-                                color = onSurfaceVariantColor
-                            )
-                        )
-                    }
+                    drawBoundedText(
+                        textMeasurer = textMeasurer,
+                        text = muni.name,
+                        x = pt.x + 8.dp.toPx(),
+                        y = pt.y - 8.dp.toPx(),
+                        style = TextStyle(
+                            fontSize = if (muni.isCapitalOrHub) 12.sp else 10.sp,
+                            fontWeight = if (muni.isCapitalOrHub) FontWeight.Bold else FontWeight.Medium,
+                            color = onSurfaceVariantColor
+                        ),
+                        marginRight = 80f
+                    )
                 }
             }
 
@@ -286,7 +315,7 @@ fun OfflineVectorMapView(
                     strokeWidth = 4.dp.toPx(),
                     isDashed = true
                 )
-                // Draw numbered corner vertices (only when within viewport)
+                // Draw numbered corner vertices
                 for (idx in drawingVertices.indices) {
                     val v = drawingVertices[idx]
                     val p = geoToScreen(v, cameraCenter, zoomLevel, width, height)
@@ -295,11 +324,13 @@ fun OfflineVectorMapView(
                     val nodeRadius = 9.dp.toPx()
                     drawCircle(color = Color.White, radius = nodeRadius + 2.dp.toPx(), center = p)
                     drawCircle(color = fiberColors.jacket, radius = nodeRadius, center = p)
-                    drawText(
+                    drawBoundedText(
                         textMeasurer = textMeasurer,
                         text = "${idx + 1}",
-                        topLeft = Offset(p.x - 4.dp.toPx(), p.y - 6.dp.toPx()),
-                        style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        x = p.x - 4.dp.toPx(),
+                        y = p.y - 6.dp.toPx(),
+                        style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White),
+                        marginRight = 10f
                     )
                 }
             }
@@ -318,19 +349,21 @@ fun OfflineVectorMapView(
                     strokeWidth = 14.dp.toPx()
                 )
 
-                // OTDR Pin Target (draw only if on screen)
+                // OTDR Pin Target
                 if (targetPt.x in -60f..(width + 60f) && targetPt.y in -60f..(height + 60f)) {
                     drawCircle(color = fiberColors.cut, radius = 10.dp.toPx(), center = targetPt)
                     drawCircle(color = Color.White, radius = 10.dp.toPx(), center = targetPt, style = Stroke(3.dp.toPx()))
-                    drawText(
+                    drawBoundedText(
                         textMeasurer = textMeasurer,
                         text = "OTDR TARGET (~${GeometryEngine.formatChainage(activeOtdrMatch.targetMapDistanceM)})",
-                        topLeft = Offset(targetPt.x + 14.dp.toPx(), targetPt.y - 10.dp.toPx()),
+                        x = targetPt.x + 14.dp.toPx(),
+                        y = targetPt.y - 10.dp.toPx(),
                         style = TextStyle(
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = fiberColors.cut
-                        )
+                        ),
+                        marginRight = 140f
                     )
                 }
             }
@@ -359,15 +392,17 @@ fun OfflineVectorMapView(
 
                 // Pin label
                 if (zoomLevel >= 13.0f || isSelected) {
-                    drawText(
+                    drawBoundedText(
                         textMeasurer = textMeasurer,
                         text = pin.label.take(24),
-                        topLeft = Offset(pt.x + 12.dp.toPx(), pt.y - 8.dp.toPx()),
+                        x = pt.x + 12.dp.toPx(),
+                        y = pt.y - 8.dp.toPx(),
                         style = TextStyle(
                             fontSize = 10.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                             color = onSurfaceColor
-                        )
+                        ),
+                        marginRight = 80f
                     )
                 }
             }
@@ -375,9 +410,6 @@ fun OfflineVectorMapView(
             // 8.5 Draw Technician Live GPS Location if active and within visible screen bounds
             if (userGpsLocation != null) {
                 val userPt = geoToScreen(userGpsLocation, cameraCenter, zoomLevel, width, height)
-                // Critical safeguard: Only render when within or near visible canvas area
-                // Coordinates far off-screen (e.g. emulator location in US vs Agusan del Sur)
-                // produce enormous offset coordinates that exceed Compose Constraints limits.
                 if (userPt.x in -120f..(width + 120f) && userPt.y in -120f..(height + 120f)) {
                     val accM = userGpsAccuracyM ?: 10f
                     val cosLat = cos(Math.toRadians(userGpsLocation.lat)).coerceAtLeast(0.1)
@@ -409,11 +441,13 @@ fun OfflineVectorMapView(
                         radius = 6.5.dp.toPx(),
                         center = userPt
                     )
-                    drawText(
+                    drawBoundedText(
                         textMeasurer = textMeasurer,
                         text = "MY LOCATION (±%.0fm)".format(accM),
-                        topLeft = Offset(userPt.x + 12.dp.toPx(), userPt.y - 8.dp.toPx()),
-                        style = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
+                        x = userPt.x + 12.dp.toPx(),
+                        y = userPt.y - 8.dp.toPx(),
+                        style = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0)),
+                        marginRight = 120f
                     )
                 }
             }
@@ -677,4 +711,26 @@ private fun distanceToSegment(p: Offset, a: Offset, b: Offset): Float {
     val projX = a.x + clampedT * dx
     val projY = a.y + clampedT * dy
     return hypot(p.x - projX, p.y - projY)
+}
+
+private fun DrawScope.drawBoundedText(
+    textMeasurer: TextMeasurer,
+    text: String,
+    x: Float,
+    y: Float,
+    style: TextStyle,
+    marginRight: Float = 60f
+) {
+    if (x >= 0f && x <= (size.width - marginRight) && y >= 0f && y <= (size.height - 18f)) {
+        try {
+            drawText(
+                textMeasurer = textMeasurer,
+                text = text,
+                topLeft = Offset(x, y),
+                style = style
+            )
+        } catch (_: Exception) {
+            // Protect against constraint overflows
+        }
+    }
 }

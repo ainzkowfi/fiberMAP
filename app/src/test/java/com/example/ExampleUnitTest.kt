@@ -175,4 +175,52 @@ class ExampleUnitTest {
         assertTrue(cum[1] > 500.0)
         assertTrue(cum[2] > cum[1])
     }
+
+    @Test
+    fun testPmTilesHeaderSyntheticParsing() {
+        val syntheticBytes = com.example.core.pmtiles.PmTilesReader.createSyntheticHeaderBytes(
+            minZoom = 8,
+            maxZoom = 18,
+            minLat = 7.5000,
+            minLon = 125.0000,
+            maxLat = 9.2000,
+            maxLon = 126.8000,
+            tileType = com.example.core.pmtiles.TileType.MVT
+        )
+        val stream = java.io.ByteArrayInputStream(syntheticBytes)
+        val header = com.example.core.pmtiles.PmTilesReader.readHeader(stream)
+
+        assertEquals(3, header.version)
+        assertEquals(8, header.minZoom)
+        assertEquals(18, header.maxZoom)
+        assertEquals(7.5000, header.minLat, 1e-4)
+        assertEquals(125.0000, header.minLon, 1e-4)
+        assertEquals(9.2000, header.maxLat, 1e-4)
+        assertEquals(126.8000, header.maxLon, 1e-4)
+        assertEquals(com.example.core.pmtiles.TileType.MVT, header.tileType)
+    }
+
+    @Test
+    fun testRepairLogModelProperties() {
+        val log = RepairLog(
+            id = "repair-log-101",
+            lineId = "line-1",
+            pinId = "pin-1",
+            spliceLossDbm = 0.015,
+            fiberCutLocation = "Km 2+450 (Patin-ay Government Center)",
+            cutLat = 8.5830,
+            cutLon = 125.9180,
+            chainageM = 2450.0,
+            repairTimestamp = 1731320000000L,
+            technicianName = "Juan Dela Cruz",
+            repairMethod = RepairMethod.FUSION,
+            closureTag = "FOSC-01",
+            notes = "Replaced 60mm protection sleeve"
+        )
+
+        assertEquals("0.02 dBm", log.spliceLossFormatted)
+        assertEquals("Km 2+450", log.chainageFormatted)
+        assertEquals("Km 2+450 (Patin-ay Government Center)", log.fiberCutLocation)
+        assertEquals(RepairMethod.FUSION, log.repairMethod)
+    }
 }

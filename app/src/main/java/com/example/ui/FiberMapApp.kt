@@ -53,6 +53,7 @@ fun FiberMapApp(
     val linesWithStats by fiberRepository.linesWithStatsFlow.collectAsState(initial = emptyList())
     val pins by fiberRepository.allPinsFlow.collectAsState(initial = emptyList())
     val events by fiberRepository.allEventsFlow.collectAsState(initial = emptyList())
+    val repairLogs by fiberRepository.allRepairLogsFlow.collectAsState(initial = emptyList())
 
     val themeMode by settingsRepository.themeModeFlow.collectAsState(initial = "system")
     val handedness by settingsRepository.handednessFlow.collectAsState(initial = "right")
@@ -118,9 +119,11 @@ fun FiberMapApp(
                         val currentStats = selectedLineWithStats
                         if (currentStats != null) {
                             val linePins = pins.filter { it.lineId == currentStats.line.id }
+                            val lineRepairLogs = repairLogs.filter { it.lineId == currentStats.line.id }
                             LineDetailScreen(
                                 stats = currentStats,
                                 pins = linePins,
+                                repairLogs = lineRepairLogs,
                                 onBack = { subScreen = SubScreen.NONE },
                                 onViewOnMap = { line -> snapToLineOnMap(line) },
                                 onFindByDistance = { line ->

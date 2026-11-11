@@ -115,3 +115,32 @@ data class AppSettingEntity(
     @PrimaryKey val key: String,
     val value: String
 )
+
+@Entity(
+    tableName = "repair_logs",
+    indices = [
+        Index(value = ["lineId"]),
+        Index(value = ["pinId"]),
+        Index(value = ["repairTimestamp"]),
+        Index(value = ["deletedAt"])
+    ]
+)
+data class RepairLogEntity(
+    @PrimaryKey val id: String,
+    val lineId: String?,
+    val pinId: String?,
+    val spliceLossDbm: Double, // Measured optical loss e.g. 0.01 dBm
+    val fiberCutLocation: String, // Readable location e.g. "Km 2+450 (Patin-ay)"
+    val cutLat: Double,
+    val cutLon: Double,
+    val chainageM: Double?,
+    val repairTimestamp: Long, // Repair completion timestamp
+    val technicianName: String = "",
+    val repairMethod: String = "fusion", // fusion, mechanical, replaced_span
+    val closureTag: String = "",
+    val notes: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val deletedAt: Long? = null
+)
+

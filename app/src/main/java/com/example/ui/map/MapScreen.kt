@@ -174,80 +174,193 @@ fun MapScreen(
             }
         )
 
-        // 2. Top Status Strip (Sulop trunk 8.42 km 3 cuts)
-        Surface(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 14.dp, vertical = 6.dp)
-                .testTag("top_status_strip"),
-            shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-            shadowElevation = 4.dp,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-        ) {
-            Row(
+        // 2. Top Status Strip / Google Maps Measure Style Overlay
+        if (isDrawingMode && drawMethod == DrawMethod.MANUAL) {
+            val cumDistances = remember(drawingVertices.toList()) {
+                GeometryEngine.computeCumulativeDistances(drawingVertices)
+            }
+            val totalDistM = cumDistances.lastOrNull() ?: 0.0
+            val formattedDist = if (totalDistM >= 1000.0) "%.2f km (%,.0f m)".format(totalDistM / 1000.0, totalDistM) else "%,.0f m".format(totalDistM)
+
+            Surface(
                 modifier = Modifier
+                    .align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .testTag("google_maps_measure_overlay"),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 8.dp,
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, fiberColors.jacket)
             ) {
-                // Line info / Selector button
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Column(
                     modifier = Modifier
-                        .clickable { showSelectLineMenu = !showSelectLineMenu }
-                        .testTag("line_selector_dropdown_trigger")
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
                 ) {
-                    if (selectedLine != null) {
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .background(getFiberColor(selectedLine.colorKey), CircleShape)
-                        )
-                        Column {
-                            Text(
-                                text = selectedLine.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                            Text(
-                                text = "${GeometryEngine.formatChainage(selectedLine.lengthMapM)} • $selectedLineCutsCount cuts (${selectedLine.status.title})",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    isDrawingMode = false
+                                    drawingVertices.clear()
+                                },
+                                modifier = Modifier.size(36.dp).testTag("measure_exit_button")
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Exit Measure Mode")
+                            }
+                            Column {
+                                Text(
+                                    text = "MEASURE / DRAW ROUTE",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = fiberColors.jacket
+                                )
+                                Text(
+                                    text = formattedDist,
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontWeight = FontWeight.Black,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
-                    } else {
-                        Text(
-                            text = "Agusan del Sur Fiber Map",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            // Undo button
+                            IconButton(
+                                onClick = {
+                                    if (drawingVertices.isNotEmpty()) {
+                                        drawingVertices.removeAt(drawingVertices.size - 1)
+                                    }
+                                },
+                                enabled = drawingVertices.isNotEmpty(),
+                                modifier = Modifier.size(40.dp).testTag("measure_undo_button")
+                            ) {
+                                Icon(
+                                    Icons.Default.Undo,
+                                    contentDescription = "Undo Vertex",
+                                    tint = if (drawingVertices.isNotEmpty()) fiberColors.jacket else MaterialTheme.colorScheme.outline
+                                )
+                            }
+
+                            // Clear button
+                            if (drawingVertices.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { drawingVertices.clear() },
+                                    modifier = Modifier.size(40.dp).testTag("measure_clear_button")
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Clear All", tint = fiberColors.cut)
+                                }
+                            }
+
+                            // Save Line Button
+                            Button(
+                                onClick = { showSaveLineDialog = true },
+                                enabled = drawingVertices.size >= 2,
+                                colors = ButtonDefaults.buttonColors(containerColor = fiberColors.repaired),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("measure_save_button")
+                            ) {
+                                Text("SAVE", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
                     }
-                    Icon(
-                        Icons.Default.ArrowDropDown,
-                        contentDescription = "Switch Line",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+
+                    Text(
+                        text = "Tap anywhere on map to place corners • ${drawingVertices.size} corners placed",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 44.dp, top = 2.dp)
                     )
                 }
-
-                // Top right actions: Settings & Maps Manager
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(
-                        onClick = onOpenMapsManager,
-                        modifier = Modifier.size(36.dp).testTag("open_maps_manager_button")
+            }
+        } else {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                    .testTag("top_status_strip"),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                shadowElevation = 4.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    // Line info / Selector button
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .clickable { showSelectLineMenu = !showSelectLineMenu }
+                            .testTag("line_selector_dropdown_trigger")
                     ) {
-                        Icon(Icons.Default.Layers, contentDescription = "PMTiles Maps", tint = fiberColors.jacket, modifier = Modifier.size(20.dp))
+                        if (selectedLine != null) {
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .background(getFiberColor(selectedLine.colorKey), CircleShape)
+                            )
+                            Column {
+                                Text(
+                                    text = selectedLine.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = "${GeometryEngine.formatChainage(selectedLine.lengthMapM)} • $selectedLineCutsCount cuts (${selectedLine.status.title})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = "Agusan del Sur Fiber Map",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Icon(
+                            Icons.Default.ArrowDropDown,
+                            contentDescription = "Switch Line",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    IconButton(
-                        onClick = onOpenSettings,
-                        modifier = Modifier.size(36.dp).testTag("open_settings_button")
-                    ) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+
+                    // Top right actions: Settings & Maps Manager
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        IconButton(
+                            onClick = onOpenMapsManager,
+                            modifier = Modifier.size(36.dp).testTag("open_maps_manager_button")
+                        ) {
+                            Icon(Icons.Default.Layers, contentDescription = "PMTiles Maps", tint = fiberColors.jacket, modifier = Modifier.size(20.dp))
+                        }
+                        IconButton(
+                            onClick = onOpenSettings,
+                            modifier = Modifier.size(36.dp).testTag("open_settings_button")
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                        }
                     }
                 }
             }

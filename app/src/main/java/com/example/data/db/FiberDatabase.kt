@@ -17,15 +17,17 @@ import java.util.UUID
         PinEventEntity::class,
         PhotoEntity::class,
         MapFileEntity::class,
-        AppSettingEntity::class
+        AppSettingEntity::class,
+        RepairLogEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class FiberDatabase : RoomDatabase() {
     abstract fun lineDao(): LineDao
     abstract fun pinDao(): PinDao
     abstract fun pinEventDao(): PinEventDao
+    abstract fun repairLogDao(): RepairLogDao
     abstract fun mapFileDao(): MapFileDao
     abstract fun settingDao(): SettingDao
 

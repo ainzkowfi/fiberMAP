@@ -14,7 +14,12 @@ class FiberRepository(private val db: FiberDatabase) {
     private val lineDao = db.lineDao()
     private val pinDao = db.pinDao()
     private val pinEventDao = db.pinEventDao()
+    private val repairLogDao = db.repairLogDao()
     private val statsUseCase = CalculateLineStatsUseCase()
+
+    val allRepairLogsFlow: Flow<List<RepairLog>> = repairLogDao.getAllRepairLogsFlow().map { entities ->
+        entities.map { it.toDomain() }
+    }
 
     val allLinesFlow: Flow<List<FiberLine>> = lineDao.getAllLinesFlow().map { entities ->
         entities.map { it.toDomain() }
@@ -53,6 +58,47 @@ class FiberRepository(private val db: FiberDatabase) {
         line?.let { statsUseCase.execute(it, pins, events) }
     }
 
+    fun getRepairLogsForLineFlow(lineId: String): Flow<List<RepairLog>> =
+        repairLogDao.getRepairLogsForLineFlow(lineId).map { list -> list.map { it.toDomain() } }
+
+    fun getRepairLogsForPinFlow(pinId: String): Flow<List<RepairLog>> =
+        repairLogDao.getRepairLogsForPinFlow(pinId).map { list -> list.map { it.toDomain() } }
+
+    suspend fun logRepair(
+        lineId: String?,
+        pinId: String?,
+        spliceLossDbm: Double,
+        fiberCutLocation: String,
+        cutLat: Double,
+        cutLon: Double,
+        chainageM: Double?,
+        technicianName: String = "",
+        repairMethod: RepairMethod = RepairMethod.FUSION,
+        closureTag: String = "",
+        notes: String = ""
+    ): RepairLog {
+        val now = System.currentTimeMillis()
+        val entity = RepairLogEntity(
+            id = UUID.randomUUID().toString(),
+            lineId = lineId,
+            pinId = pinId,
+            spliceLossDbm = spliceLossDbm,
+            fiberCutLocation = fiberCutLocation,
+            cutLat = cutLat,
+            cutLon = cutLon,
+            chainageM = chainageM,
+            repairTimestamp = now,
+            technicianName = technicianName,
+            repairMethod = repairMethod.name.lowercase(),
+            closureTag = closureTag,
+            notes = notes,
+            createdAt = now,
+            updatedAt = now
+        )
+        repairLogDao.insertRepairLog(entity)
+        return entity.toDomain()
+    }
+
     suspend fun saveLine(line: FiberLine) {
         val cum = GeometryEngine.computeCumulativeDistances(line.vertices)
         val length = cum.lastOrNull() ?: 0.0
@@ -84,9 +130,11 @@ class FiberRepository(private val db: FiberDatabase) {
             lineDao.softDeleteLine(lineId, now)
             pinDao.softDeletePinsForLine(lineId, now)
             pinEventDao.softDeleteEventsForLine(lineId, now)
+            repairLogDao.softDeleteRepairLogsForLine(lineId, now)
         } catch (_: Exception) {
             lineDao.hardDeleteLine(lineId)
             pinDao.hardDeletePinsForLine(lineId)
+            repairLogDao.hardDeleteRepairLogsForLine(lineId)
         }
     }
 
@@ -122,6 +170,14 @@ class FiberRepository(private val db: FiberDatabase) {
             }
         }
 
+        val resolvedLabel = label.ifEmpty {
+            if (chainage != null) {
+                "${type.title} at ${GeometryEngine.formatChainage(chainage)}"
+            } else {
+                "${type.title} at %.5f, %.5f".format(lat, lon)
+            }
+        }
+
         val pinEntity = PinEntity(
             id = pinId,
             lineId = lineId,
@@ -132,13 +188,7 @@ class FiberRepository(private val db: FiberDatabase) {
             snapLon = snapLon,
             chainageM = chainage,
             gpsAccuracyM = gpsAccuracyM,
-            label = label.ifEmpty {
-                if (chainage != null) {
-                    "${type.title} at ${GeometryEngine.formatChainage(chainage)}"
-                } else {
-                    "${type.title} at %.5f, %.5f".format(lat, lon)
-                }
-            },
+            label = resolvedLabel,
             notes = notes,
             state = state.name.lowercase(),
             spliceLossDbm = spliceLossDbm,
@@ -149,19 +199,39 @@ class FiberRepository(private val db: FiberDatabase) {
 
         pinDao.insertPin(pinEntity)
 
-        // If logged directly as repaired, create the repair event with splice loss
+        // If logged directly as repaired, create repair event and RepairLog
         if (state == PinState.REPAIRED) {
+            val loss = spliceLossDbm ?: 0.02
             val repairEvent = PinEventEntity(
                 id = UUID.randomUUID().toString(),
                 pinId = pinId,
                 kind = "repaired",
                 eventDate = now,
                 repairMethod = RepairMethod.FUSION.name.lowercase(),
-                spliceLossDbm = spliceLossDbm,
+                spliceLossDbm = loss,
                 note = notes.ifEmpty { "Field splice repair completed." },
                 createdAt = now
             )
             pinEventDao.insertEvent(repairEvent)
+
+            val repairLog = RepairLogEntity(
+                id = UUID.randomUUID().toString(),
+                lineId = lineId,
+                pinId = pinId,
+                spliceLossDbm = loss,
+                fiberCutLocation = resolvedLabel,
+                cutLat = snapLat,
+                cutLon = snapLon,
+                chainageM = chainage,
+                repairTimestamp = now,
+                technicianName = "Field Tech",
+                repairMethod = RepairMethod.FUSION.name.lowercase(),
+                closureTag = "",
+                notes = notes.ifEmpty { "Initial repair entry" },
+                createdAt = now,
+                updatedAt = now
+            )
+            repairLogDao.insertRepairLog(repairLog)
         } else if (type == PinType.CUT_REPAIR || state == PinState.OPEN) {
             val cutEvent = PinEventEntity(
                 id = UUID.randomUUID().toString(),
@@ -187,10 +257,11 @@ class FiberRepository(private val db: FiberDatabase) {
     ) {
         val pin = pinDao.getPinById(pinId) ?: return
         val now = System.currentTimeMillis()
+        val loss = spliceLossDbm ?: pin.spliceLossDbm ?: 0.01
 
         val updatedPin = pin.copy(
             state = "repaired",
-            spliceLossDbm = spliceLossDbm ?: pin.spliceLossDbm,
+            spliceLossDbm = loss,
             updatedAt = now
         )
         pinDao.updatePin(updatedPin)
@@ -201,11 +272,30 @@ class FiberRepository(private val db: FiberDatabase) {
             kind = "repaired",
             eventDate = now,
             repairMethod = method.name.lowercase(),
-            spliceLossDbm = spliceLossDbm,
+            spliceLossDbm = loss,
             note = note,
             createdAt = now
         )
         pinEventDao.insertEvent(repairEvent)
+
+        val repairLog = RepairLogEntity(
+            id = UUID.randomUUID().toString(),
+            lineId = pin.lineId,
+            pinId = pinId,
+            spliceLossDbm = loss,
+            fiberCutLocation = pin.label,
+            cutLat = pin.snapLat,
+            cutLon = pin.snapLon,
+            chainageM = pin.chainageM,
+            repairTimestamp = now,
+            technicianName = "Field Tech",
+            repairMethod = method.name.lowercase(),
+            closureTag = "",
+            notes = note,
+            createdAt = now,
+            updatedAt = now
+        )
+        repairLogDao.insertRepairLog(repairLog)
     }
 
     suspend fun updatePin(pin: FiberPin) {
@@ -236,9 +326,11 @@ class FiberRepository(private val db: FiberDatabase) {
         try {
             pinDao.softDeletePin(pinId, now)
             pinEventDao.softDeleteEventsForPin(pinId, now)
+            repairLogDao.hardDeleteRepairLogsForPin(pinId)
         } catch (_: Exception) {
             pinDao.hardDeletePin(pinId)
             pinEventDao.hardDeleteEventsForPin(pinId)
+            repairLogDao.hardDeleteRepairLogsForPin(pinId)
         }
     }
 
@@ -302,6 +394,28 @@ class FiberRepository(private val db: FiberDatabase) {
             repairMethod = methodEnum,
             spliceLossDbm = spliceLossDbm,
             note = note,
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+            deletedAt = deletedAt
+        )
+    }
+
+    private fun RepairLogEntity.toDomain(): RepairLog {
+        val methodEnum = runCatching { RepairMethod.valueOf(repairMethod.uppercase()) }.getOrDefault(RepairMethod.FUSION)
+        return RepairLog(
+            id = id,
+            lineId = lineId,
+            pinId = pinId,
+            spliceLossDbm = spliceLossDbm,
+            fiberCutLocation = fiberCutLocation,
+            cutLat = cutLat,
+            cutLon = cutLon,
+            chainageM = chainageM,
+            repairTimestamp = repairTimestamp,
+            technicianName = technicianName,
+            repairMethod = methodEnum,
+            closureTag = closureTag,
+            notes = notes,
             createdAt = createdAt,
             updatedAt = updatedAt,
             deletedAt = deletedAt

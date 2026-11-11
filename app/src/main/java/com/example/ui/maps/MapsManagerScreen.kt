@@ -1,5 +1,10 @@
 package com.example.ui.maps
 
+import android.content.Context
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,12 +15,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.core.pmtiles.PmTilesReader
 import com.example.data.db.MapFileEntity
 import com.example.ui.theme.LocalFiberColors
+import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -31,8 +40,45 @@ fun MapsManagerScreen(
     onDeleteMapFile: (String) -> Unit
 ) {
     val fiberColors = LocalFiberColors.current
+    val context = LocalContext.current
     var showImportDialog by remember { mutableStateOf(false) }
     var fileNameInput by remember { mutableStateOf("agusan_del_sur_high_res.pmtiles") }
+    var validationError by remember { mutableStateOf<String?>(null) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val mapsDir = File(context.filesDir, "maps").apply { mkdirs() }
+                val targetFile = File(mapsDir, "imported_${System.currentTimeMillis()}.pmtiles")
+
+                context.contentResolver.openInputStream(uri)?.use { inStream ->
+                    FileOutputStream(targetFile).use { outStream ->
+                        inStream.copyTo(outStream)
+                    }
+                }
+
+                // Read PMTiles v3 Header
+                val header = PmTilesReader.readHeader(targetFile)
+                val newMap = MapFileEntity(
+                    id = UUID.randomUUID().toString(),
+                    displayName = "PMTiles (z${header.minZoom}-z${header.maxZoom})",
+                    path = targetFile.absolutePath,
+                    sizeBytes = targetFile.length(),
+                    minZoom = header.minZoom,
+                    maxZoom = header.maxZoom,
+                    bounds = header.boundsString,
+                    buildDate = System.currentTimeMillis(),
+                    active = true
+                )
+                onAddNewMapFile(newMap)
+                Toast.makeText(context, "PMTiles v3 map loaded (${header.tileType.description})", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "PMTiles Error: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     val sdf = remember { SimpleDateFormat("MMM d, yyyy", Locale.US) }
 
@@ -43,7 +89,7 @@ fun MapsManagerScreen(
                     Column {
                         Text("Base Map Manager", fontWeight = FontWeight.Bold)
                         Text(
-                            "Offline PMTiles & MBTiles Packages",
+                            "Offline PMTiles & Vector Tile Archives",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -59,7 +105,7 @@ fun MapsManagerScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { showImportDialog = true },
+                onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
                 modifier = Modifier.testTag("import_map_fab"),
                 containerColor = fiberColors.jacket,
                 contentColor = androidx.compose.ui.graphics.Color.White,
@@ -67,7 +113,7 @@ fun MapsManagerScreen(
             ) {
                 Icon(Icons.Default.FileUpload, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("IMPORT .PMTILES", fontWeight = FontWeight.Bold)
+                Text("PICK .PMTILES FILE", fontWeight = FontWeight.Bold)
             }
         }
     ) { paddingValues ->
