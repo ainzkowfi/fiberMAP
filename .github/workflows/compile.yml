@@ -33,7 +33,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: ${{ hashFiles('gradlew') == '' && '8.11.1' || 'wrapper' }}
+          gradle-version: ${{ hashFiles('gradlew') == '' && '9.3.1' || 'wrapper' }}
 
       - name: Pick Gradle command
         run: |
