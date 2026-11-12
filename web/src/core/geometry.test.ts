@@ -101,6 +101,39 @@ describe("geometry engine", () => {
     expect(ahead!.targetMapDistanceM).toBeGreaterThan(bare!.targetMapDistanceM);
   });
 
+  it("takes the launch cable off the OTDR reading", () => {
+    const line = [
+      { lat: 8.5085, lon: 125.9772 },
+      { lat: 8.522, lon: 125.967 },
+    ];
+
+    // The launch cable is extra cable between the OTDR and the fiber under
+    // test, so a 100 m reading with a 40 m launch cable is 60 m along the
+    // route.
+    const withOffset = otdrToMapLocation(100, false, 0, [], line, undefined, 0.03, 40);
+    const without = otdrToMapLocation(60, false, 0, [], line, undefined, 0.03, 0);
+    expect(withOffset!.targetMapDistanceM).toBeCloseTo(
+      without!.targetMapDistanceM,
+      6,
+    );
+    expect(withOffset!.targetMapDistanceM).toBeLessThan(
+      otdrToMapLocation(100, false, 0, [], line)!.targetMapDistanceM,
+    );
+  });
+
+  it("changes nothing when the launch offset is zero", () => {
+    const line = [
+      { lat: 8.5085, lon: 125.9772 },
+      { lat: 8.522, lon: 125.967 },
+    ];
+    const plain = otdrToMapLocation(800, false, 3, [], line);
+    const withZero = otdrToMapLocation(800, false, 3, [], line, undefined, 0.03, 0);
+    expect(withZero!.targetMapDistanceM).toBe(plain!.targetMapDistanceM);
+    expect(withZero!.minMapDistanceM).toBe(plain!.minMapDistanceM);
+    expect(withZero!.maxMapDistanceM).toBe(plain!.maxMapDistanceM);
+    expect(withZero!.point.lat).toBe(plain!.point.lat);
+  });
+
   it("simplifies with Douglas-Peucker", () => {
     const points = [
       { lat: 8.5, lon: 125.97 },

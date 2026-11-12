@@ -17,7 +17,7 @@ export function pinLabelParts(
   const detail = [
     own ? PIN_TYPE_INFO[pin.type].title : null,
     pin.chainageM !== null ? formatChainage(pin.chainageM, chainageStyle) : null,
-    pin.spliceLossDbm !== null ? `${pin.spliceLossDbm.toFixed(2)} dBm` : null,
+    pin.spliceLossDbm !== null ? `${pin.spliceLossDbm.toFixed(2)} dB` : null,
   ]
     .filter(Boolean)
     .join(" · ");

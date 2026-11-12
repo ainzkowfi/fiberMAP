@@ -186,7 +186,7 @@ export function PinSheet({
           </div>
 
           <div className="field">
-            <label htmlFor="pin-loss">Measured optical splice loss (dBm)</label>
+            <label htmlFor="pin-loss">Measured optical splice loss (dB)</label>
             <input
               id="pin-loss"
               inputMode="decimal"
@@ -260,7 +260,7 @@ export function PinSheet({
                 </div>
               </div>
               <div className="field">
-                <label htmlFor="repair-loss">Splice loss (dBm)</label>
+                <label htmlFor="repair-loss">Splice loss (dB)</label>
                 <input
                   id="repair-loss"
                   inputMode="decimal"

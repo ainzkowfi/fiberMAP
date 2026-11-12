@@ -79,6 +79,12 @@ export interface FiberPin {
   label: string;
   notes: string;
   state: PinState;
+  /**
+   * The measured splice loss, in dB. The name says dBm, which is wrong: a
+   * splice loss is a difference, not a power level. The key is kept because it
+   * is in the wire format and in the APK's database, and renaming it would
+   * break every bundle and every phone.
+   */
   spliceLossDbm: number | null;
   coilLengthM: number;
   createdAt: number;

@@ -32,6 +32,7 @@ export interface PinRow {
   label: string;
   notes: string;
   state: string;
+  /** The splice loss in dB. The key keeps the old dBm spelling on purpose. */
   spliceLossDbm: number | null;
   coilLengthM: number;
   createdAt: number;

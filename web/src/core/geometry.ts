@@ -164,6 +164,7 @@ export function otdrToMapLocation(
   polyline: GeoPoint[],
   cumulative: number[] = computeCumulativeDistances(polyline),
   uncertaintyRatio = 0.03,
+  launchOffsetM = 0,
 ): OtdrMapMatch | null {
   if (polyline.length < 2) return null;
   const totalMapLength = cumulative[cumulative.length - 1] ?? 0;
@@ -171,14 +172,19 @@ export function otdrToMapLocation(
 
   const slackFactor = 1 + slackPercent / 100;
 
+  // The launch cable and the pigtail sit between the OTDR and the fiber under
+  // test, so the reading is longer than the route by that much. Take it off
+  // before the solve. An offset of zero changes nothing.
+  const reading = Math.max(0, otdrDistanceM - Math.max(0, launchOffsetM));
+
   const effectiveCableDist = fromEnd
     ? Math.max(
         0,
         totalMapLength * slackFactor +
           coils.reduce((s, c) => s + c[1], 0) -
-          otdrDistanceM,
+          reading,
       )
-    : otdrDistanceM;
+    : reading;
 
   // Iterative solve: coils subtract based on the current map chainage estimate.
   let estimatedMapDist = effectiveCableDist / slackFactor;

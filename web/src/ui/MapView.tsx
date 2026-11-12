@@ -826,6 +826,11 @@ export function MapView({
         {readout}
       </div>
 
+      {/* The basemap is built from OpenStreetMap data, so the credit has to
+          be on the map. It sits above the readout, out of the way of the
+          thumb controls. */}
+      <div className="map-attrib">© OpenStreetMap contributors</div>
+
       {locationError && (
         <div
           className="map-readout"

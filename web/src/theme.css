@@ -721,6 +721,22 @@ a:focus-visible {
   color: #06181c;
 }
 
+/* The basemap is OpenStreetMap data. The credit stays on the map, in a
+   corner the thumb does not reach, and on a chip of the app's own surface so
+   it is readable over any tile. */
+.map-attrib {
+  position: absolute;
+  bottom: 42px;
+  left: 12px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  pointer-events: none;
+}
+
 /* ---------- Sheets / modals ---------- */
 
 .scrim {

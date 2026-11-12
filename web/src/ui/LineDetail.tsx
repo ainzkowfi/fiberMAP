@@ -155,7 +155,7 @@ export function LineDetail({
                     <strong>{log.fiberCutLocation}</strong>
                     <div className="muted">
                       {new Date(log.repairTimestamp).toLocaleString()} ·{" "}
-                      {log.spliceLossDbm.toFixed(2)} dBm ·{" "}
+                      {log.spliceLossDbm.toFixed(2)} dB ·{" "}
                       {REPAIR_METHOD_TITLE[log.repairMethod]}
                       {log.closureTag && ` · ${log.closureTag}`}
                     </div>

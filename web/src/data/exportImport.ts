@@ -78,6 +78,7 @@ export interface BundlePin {
   snapLat?: number;
   snapLon?: number;
   gpsAccuracyM?: number | null;
+  /** The splice loss in dB. The key keeps the old dBm spelling on purpose. */
   spliceLossDbm?: number | null;
   updatedAt?: number;
   deletedAt?: number | null;

@@ -30,9 +30,11 @@ export function OtdrDialog({
 }: OtdrDialogProps) {
   const [input, setInput] = useState("");
   const [fromEnd, setFromEnd] = useState(false);
+  const [offset, setOffset] = useState("");
   const sheetRef = useRef<HTMLDivElement>(null);
 
   const otdrM = parseFloat(input) || 0;
+  const offsetM = parseFloat(offset) || 0;
 
   const match = useMemo(() => {
     if (otdrM <= 0 || line.vertices.length < 2) return null;
@@ -46,8 +48,10 @@ export function OtdrDialog({
       coils,
       line.vertices,
       computeCumulativeDistances(line.vertices),
+      0.03,
+      offsetM,
     );
-  }, [otdrM, fromEnd, line, pins]);
+  }, [otdrM, fromEnd, line, pins, offsetM]);
 
   const press = (key: string) => setInput((v) => v + key);
 
@@ -112,6 +116,21 @@ export function OtdrDialog({
             >
               From end
             </button>
+          </div>
+
+          <div className="field" style={{ marginTop: 10 }}>
+            <label htmlFor="otdr-offset">Launch cable / pigtail offset (m)</label>
+            <input
+              id="otdr-offset"
+              inputMode="numeric"
+              value={offset}
+              onChange={(e) => setOffset(e.target.value)}
+              placeholder="0"
+            />
+            <div className="small muted" style={{ marginTop: 4 }}>
+              Cable between the OTDR and the fiber under test. It is taken off
+              the reading before the solve.
+            </div>
           </div>
 
           <div className="stack" style={{ gap: 8 }}>
