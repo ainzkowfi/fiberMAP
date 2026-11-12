@@ -190,12 +190,12 @@ export async function deleteLine(lineId: string): Promise<void> {
   const now = Date.now();
   await db.transaction("rw", db.lines, db.pins, db.pinEvents, db.repairLogs, async () => {
     await db.lines.update(lineId, { deletedAt: now, updatedAt: now });
-    await db.pins.where("lineId").equals(lineId).modify({ deletedAt: now });
+    await db.pins.where("lineId").equals(lineId).modify({ deletedAt: now, updatedAt: now });
     const pinIds = await db.pins.where("lineId").equals(lineId).primaryKeys();
     if (pinIds.length > 0) {
-      await db.pinEvents.where("pinId").anyOf(pinIds).modify({ deletedAt: now });
+      await db.pinEvents.where("pinId").anyOf(pinIds).modify({ deletedAt: now, updatedAt: now });
     }
-    await db.repairLogs.where("lineId").equals(lineId).modify({ deletedAt: now });
+    await db.repairLogs.where("lineId").equals(lineId).modify({ deletedAt: now, updatedAt: now });
   });
 }
 
@@ -454,8 +454,8 @@ export async function deletePin(pinId: string): Promise<void> {
   const now = Date.now();
   await db.transaction("rw", db.pins, db.pinEvents, db.repairLogs, async () => {
     await db.pins.update(pinId, { deletedAt: now, updatedAt: now });
-    await db.pinEvents.where("pinId").equals(pinId).modify({ deletedAt: now });
-    await db.repairLogs.where("pinId").equals(pinId).modify({ deletedAt: now });
+    await db.pinEvents.where("pinId").equals(pinId).modify({ deletedAt: now, updatedAt: now });
+    await db.repairLogs.where("pinId").equals(pinId).modify({ deletedAt: now, updatedAt: now });
   });
 }
 

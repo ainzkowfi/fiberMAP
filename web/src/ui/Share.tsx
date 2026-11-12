@@ -1,15 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FiberLine, FiberPin, PinEvent, PlaceLabel, RepairLog } from "../domain/models";
 import {
+  applyBundleImport,
+  exportFmapBundle,
   generateCsv,
-  generateFmapBundleJson,
   generateGeoJson,
   generateKml,
-  importFmapBundle,
+  planBundleImport,
+  type BundleImportPlan,
 } from "../data/exportImport";
 import { chunkPayload, frameToDataUrl, reassembleFrames, type QrFrame } from "../core/qr";
 import { useEscape } from "./useEscape";
 import { useDialog } from "./useDialog";
+import { ImportPreviewSheet } from "./ImportPreviewSheet";
 
 export interface ShareProps {
   lines: FiberLine[];
@@ -42,29 +45,45 @@ export function Share({ lines, pins, events, repairLogs, placeLabels }: SharePro
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [frameText, setFrameText] = useState("");
   const [frameStatus, setFrameStatus] = useState<string | null>(null);
+  const [plan, setPlan] = useState<BundleImportPlan | null>(null);
+  const [bundleJson, setBundleJson] = useState("");
+  const [bundleRows, setBundleRows] = useState(0);
   const previewRef = useRef<HTMLDivElement>(null);
 
-  // The export timestamp has to be stable across renders. If it were
-  // Date.now() on every render the bundle string would change every render,
-  // and the effect that turns it into QR frames would set state from it, and
-  // the two would feed each other forever.
-  const [exportedAt, setExportedAt] = useState(() => Date.now());
+  // The bundle is read out of the database, tombstones included, so a line
+  // deleted on one phone stays deleted on the next. The row count includes the
+  // deleted rows: a bundle that only carries deletions is still worth
+  // handing over.
+  const refreshBundle = useCallback(async () => {
+    const json = await exportFmapBundle();
+    setBundleJson(json);
+    const parsed = JSON.parse(json) as {
+      lines?: unknown[];
+      pins?: unknown[];
+      events?: unknown[];
+      repairLogs?: unknown[];
+      placeLabels?: unknown[];
+    };
+    setBundleRows(
+      (parsed.lines?.length ?? 0) +
+        (parsed.pins?.length ?? 0) +
+        (parsed.events?.length ?? 0) +
+        (parsed.repairLogs?.length ?? 0) +
+        (parsed.placeLabels?.length ?? 0),
+    );
+  }, []);
 
-  const bundleJson = generateFmapBundleJson(
-    lines,
-    pins,
-    events,
-    repairLogs,
-    exportedAt,
-    placeLabels,
-  );
-  const hasData = lines.length > 0 || pins.length > 0 || placeLabels.length > 0;
+  const hasData = bundleRows > 0;
+
+  useEffect(() => {
+    void refreshBundle();
+  }, [refreshBundle, lines, pins, events, repairLogs, placeLabels]);
 
   useEscape(() => setPreview(null), preview !== null);
   useDialog(previewRef, preview !== null);
 
   useEffect(() => {
-    setFrames(hasData ? chunkPayload(bundleJson) : []);
+    setFrames(hasData && bundleJson ? chunkPayload(bundleJson) : []);
     setFrameIndex(0);
   }, [bundleJson, hasData]);
 
@@ -83,18 +102,35 @@ export function Share({ lines, pins, events, repairLogs, placeLabels }: SharePro
     };
   }, [frames, frameIndex]);
 
-  const runImport = async () => {
+  /**
+   * Reads the bundle and works out what it would do. Nothing is written until
+   * the tech has seen the counts and said yes.
+   */
+  const prepareImport = async (text: string, fromFrames: boolean) => {
     try {
-      const result = await importFmapBundle(importText);
-      setImportStatus(
-        `Imported ${result.lines} lines, ${result.pins} pins, ${result.events} events, ${result.repairLogs} repair logs${
-          result.placeLabels ? `, ${result.placeLabels} names` : ""
-        }.`,
-      );
-      setImportText("");
+      const next = await planBundleImport(text);
+      setPlan(next);
+      setImportStatus(null);
+      setFrameStatus(null);
     } catch (err) {
-      setImportStatus(`Import failed: ${(err as Error).message}`);
+      setPlan(null);
+      const message = (err as Error).message;
+      if (fromFrames) setFrameStatus(`Frames rejected: ${message}`);
+      else setImportStatus(`Import refused: ${message}`);
     }
+  };
+
+  const confirmImport = async () => {
+    if (!plan) return;
+    const totals = plan.preview.totals;
+    await applyBundleImport(plan);
+    setPlan(null);
+    setImportText("");
+    setFrameText("");
+    setImportStatus(
+      `Imported ${totals.new} new, ${totals.updated} updated, ${totals.deleted} deleted.`,
+    );
+    await refreshBundle();
   };
 
   /**
@@ -123,13 +159,7 @@ export function Share({ lines, pins, events, repairLogs, placeLabels }: SharePro
         setFrameStatus(`Frames rejected: ${result.error}`);
         return;
       }
-      const imported = await importFmapBundle(result.payload);
-      setFrameStatus(
-        `Imported ${imported.lines} lines, ${imported.pins} pins, ${imported.events} events, ${imported.repairLogs} repair logs${
-          imported.placeLabels ? `, ${imported.placeLabels} names` : ""
-        }.`,
-      );
-      setFrameText("");
+      await prepareImport(result.payload, true);
     } catch (err) {
       setFrameStatus(`Frames rejected: ${(err as Error).message}`);
     }
@@ -154,22 +184,7 @@ export function Share({ lines, pins, events, repairLogs, placeLabels }: SharePro
             <button
               className="btn"
               disabled={!hasData}
-              onClick={() => {
-                // Stamp the export at the moment the crew asks for it.
-                const stamp = Date.now();
-                setExportedAt(stamp);
-                setPreview({
-                  kind: "bundle",
-                  content: generateFmapBundleJson(
-                    lines,
-                    pins,
-                    events,
-                    repairLogs,
-                    stamp,
-                    placeLabels,
-                  ),
-                });
-              }}
+              onClick={() => setPreview({ kind: "bundle", content: bundleJson })}
             >
               fiberMAP bundle (JSON)
             </button>
@@ -253,7 +268,8 @@ export function Share({ lines, pins, events, repairLogs, placeLabels }: SharePro
           <strong>Import bundle</strong>
           <p className="small muted" style={{ margin: "4px 0 12px" }}>
             Paste a fiberMAP bundle JSON, exported from this app or from the
-            Android APK. Existing records with the same id are overwritten.
+            Android APK. You will see what it would change before anything is
+            written.
           </p>
           <div className="field">
             <label htmlFor="import-json">Bundle JSON</label>
@@ -268,7 +284,7 @@ export function Share({ lines, pins, events, repairLogs, placeLabels }: SharePro
           <button
             className="btn primary block"
             disabled={!importText.trim()}
-            onClick={() => void runImport()}
+            onClick={() => void prepareImport(importText, false)}
             style={{ marginTop: 10 }}
           >
             Import bundle
@@ -303,6 +319,14 @@ export function Share({ lines, pins, events, repairLogs, placeLabels }: SharePro
           )}
         </div>
       </div>
+
+      {plan && (
+        <ImportPreviewSheet
+          preview={plan.preview}
+          onImport={() => void confirmImport()}
+          onCancel={() => setPlan(null)}
+        />
+      )}
 
       {preview && (
         <div className="scrim" onClick={() => setPreview(null)}>

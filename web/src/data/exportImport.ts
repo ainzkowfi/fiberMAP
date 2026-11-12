@@ -1,11 +1,25 @@
-import type { FiberLine, FiberPin, PinEvent, PlaceLabel, RepairLog } from "../domain/models";
+import type { FiberLine, FiberPin } from "../domain/models";
 import { PIN_TYPE_INFO } from "../domain/models";
-import { encodeGeometryToBlob } from "../core/geometry";
-import { db } from "./db";
+import { decodeGeometryFromBlob, encodeGeometryToBlob } from "../core/geometry";
+import {
+  db,
+  type LineRow,
+  type PinEventRow,
+  type PinRow,
+  type PlaceLabelRow,
+  type RepairLogRow,
+} from "./db";
+
+/**
+ * Version 2 adds `deletedAt` to every row, so a bundle carries the tombstones
+ * of what was deleted. Version 1 is still read: its rows have no `deletedAt`
+ * and must never delete anything.
+ */
+export const BUNDLE_VERSION = 2;
 
 export interface FmapBundle {
   format: "fiberMAP-bundle";
-  version: 1;
+  version: 1 | 2;
   exportedAt: number;
   lines: BundleLine[];
   pins: BundlePin[];
@@ -21,6 +35,8 @@ export interface BundlePlaceLabel {
   lat: number;
   lon: number;
   createdAt?: number;
+  updatedAt?: number;
+  deletedAt?: number | null;
 }
 
 /**
@@ -44,6 +60,7 @@ export interface BundleLine {
   branchChainageM?: number | null;
   createdAt?: number;
   updatedAt?: number;
+  deletedAt?: number | null;
 }
 
 export interface BundlePin {
@@ -63,6 +80,7 @@ export interface BundlePin {
   gpsAccuracyM?: number | null;
   spliceLossDbm?: number | null;
   updatedAt?: number;
+  deletedAt?: number | null;
 }
 
 export interface BundleEvent {
@@ -73,6 +91,9 @@ export interface BundleEvent {
   repairMethod: string;
   note: string;
   spliceLossDbm?: number | null;
+  createdAt?: number;
+  updatedAt?: number;
+  deletedAt?: number | null;
 }
 
 export interface BundleRepairLog {
@@ -89,21 +110,46 @@ export interface BundleRepairLog {
   repairMethod: string;
   closureTag: string;
   notes: string;
+  createdAt?: number;
+  updatedAt?: number;
+  deletedAt?: number | null;
 }
 
-export function generateFmapBundleJson(
-  lines: FiberLine[],
-  pins: FiberPin[],
-  events: PinEvent[],
-  repairLogs: RepairLog[] = [],
-  exportedAt: number = Date.now(),
-  placeLabels: PlaceLabel[] = [],
+// --- Export ---
+
+/**
+ * Builds a bundle from the stored rows, tombstones included.
+ *
+ * The rows come straight out of the database rather than from the live
+ * queries, because the live queries leave out the deleted rows and a bundle
+ * that forgets a deletion cannot carry it to the next phone.
+ */
+export async function exportFmapBundle(): Promise<string> {
+  const [lines, pins, events, repairLogs, placeLabels] = await Promise.all([
+    db.lines.toArray(),
+    db.pins.toArray(),
+    db.pinEvents.toArray(),
+    db.repairLogs.toArray(),
+    db.placeLabels.toArray(),
+  ]);
+  return buildBundleJson({ lines, pins, events, repairLogs, placeLabels }, Date.now());
+}
+
+export function buildBundleJson(
+  rows: {
+    lines: LineRow[];
+    pins: PinRow[];
+    events: PinEventRow[];
+    repairLogs: RepairLogRow[];
+    placeLabels: PlaceLabelRow[];
+  },
+  exportedAt: number,
 ): string {
   const bundle: FmapBundle = {
     format: "fiberMAP-bundle",
-    version: 1,
+    version: BUNDLE_VERSION,
     exportedAt,
-    lines: lines.map((line) => ({
+    lines: rows.lines.map((line) => ({
       id: line.id,
       name: line.name,
       colorKey: line.colorKey,
@@ -113,14 +159,17 @@ export function generateFmapBundleJson(
       notes: line.notes,
       lengthMapM: line.lengthMapM,
       slackPercent: line.slackPercent,
-      vertices: line.vertices.map((v) => [v.lat, v.lon] as [number, number]),
+      vertices: decodeGeometryFromBlob(line.geometry).map(
+        (v) => [v.lat, v.lon] as [number, number],
+      ),
       measuredLengthM: line.measuredLengthM,
       parentLineId: line.parentLineId,
       branchChainageM: line.branchChainageM,
       createdAt: line.createdAt,
       updatedAt: line.updatedAt,
+      deletedAt: line.deletedAt,
     })),
-    pins: pins.map((pin) => ({
+    pins: rows.pins.map((pin) => ({
       id: pin.id,
       lineId: pin.lineId ?? "",
       type: pin.type,
@@ -137,8 +186,9 @@ export function generateFmapBundleJson(
       gpsAccuracyM: pin.gpsAccuracyM,
       spliceLossDbm: pin.spliceLossDbm,
       updatedAt: pin.updatedAt,
+      deletedAt: pin.deletedAt,
     })),
-    events: events.map((ev) => ({
+    events: rows.events.map((ev) => ({
       id: ev.id,
       pinId: ev.pinId,
       kind: ev.kind,
@@ -146,8 +196,11 @@ export function generateFmapBundleJson(
       repairMethod: ev.repairMethod ?? "",
       note: ev.note,
       spliceLossDbm: ev.spliceLossDbm,
+      createdAt: ev.createdAt,
+      updatedAt: ev.updatedAt,
+      deletedAt: ev.deletedAt,
     })),
-    repairLogs: repairLogs.map((log) => ({
+    repairLogs: rows.repairLogs.map((log) => ({
       id: log.id,
       lineId: log.lineId ?? "",
       pinId: log.pinId ?? "",
@@ -161,13 +214,18 @@ export function generateFmapBundleJson(
       repairMethod: log.repairMethod,
       closureTag: log.closureTag,
       notes: log.notes,
+      createdAt: log.createdAt,
+      updatedAt: log.updatedAt,
+      deletedAt: log.deletedAt,
     })),
-    placeLabels: placeLabels.map((label) => ({
+    placeLabels: rows.placeLabels.map((label) => ({
       id: label.id,
       name: label.name,
       lat: label.lat,
       lon: label.lon,
       createdAt: label.createdAt,
+      updatedAt: label.updatedAt,
+      deletedAt: label.deletedAt,
     })),
   };
   return JSON.stringify(bundle, null, 2);
@@ -293,25 +351,603 @@ export interface ImportResult {
   placeLabels: number;
 }
 
-const upper = (v: string | undefined, fallback: string) =>
-  (v ?? fallback).toUpperCase();
+/** What an import would do to each kind of row. */
+export interface ImportCounts {
+  /** Not on this device yet. */
+  new: number;
+  /** Newer than the local row, so it replaces it. */
+  updated: number;
+  /** The local row is newer or the same, so it stays as it is. */
+  skipped: number;
+  /** Newer than the local row and marked deleted, so it becomes a tombstone. */
+  deleted: number;
+}
+
+export interface ImportPreview {
+  lines: ImportCounts;
+  pins: ImportCounts;
+  events: ImportCounts;
+  repairLogs: ImportCounts;
+  placeLabels: ImportCounts;
+  totals: ImportCounts;
+}
 
 /**
- * Merges a fiberMAP bundle into the local database. Existing rows with the same
- * id are overwritten; ids not present in the bundle are kept.
+ * A bundle that cannot be trusted is refused before a single row is written.
+ * The message names the first field that is wrong, because a tech staring at
+ * a rejected file needs to know where to look.
  */
-export async function importFmapBundle(json: string): Promise<ImportResult> {
-  const parsed = JSON.parse(json) as Partial<FmapBundle>;
-  if (parsed.format !== "fiberMAP-bundle") {
-    throw new Error("Not a fiberMAP bundle (missing format marker)");
+export class BundleError extends Error {
+  constructor(
+    readonly field: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "BundleError";
   }
-  const now = Date.now();
-  const lines = parsed.lines ?? [];
-  const pins = parsed.pins ?? [];
-  const events = parsed.events ?? [];
-  const repairLogs = parsed.repairLogs ?? [];
-  const placeLabels = parsed.placeLabels ?? [];
+}
 
+const CAPS = {
+  jsonBytes: 64 * 1024 * 1024,
+  lines: 50_000,
+  pins: 200_000,
+  events: 500_000,
+  repairLogs: 200_000,
+  placeLabels: 100_000,
+  verticesPerLine: 200_000,
+  text: 8_000,
+  id: 200,
+};
+
+function fail(field: string, message: string): never {
+  throw new BundleError(field, `${field}: ${message}`);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function needObject(value: unknown, field: string): Record<string, unknown> {
+  if (!isRecord(value)) fail(field, "expected an object");
+  return value;
+}
+
+function needArray(value: unknown, field: string, cap: number): unknown[] {
+  if (!Array.isArray(value)) fail(field, "expected an array");
+  if (value.length > cap) {
+    fail(field, `has ${value.length} rows, the limit is ${cap}`);
+  }
+  return value;
+}
+
+function needString(
+  row: Record<string, unknown>,
+  key: string,
+  field: string,
+  max = CAPS.text,
+): string {
+  const value = row[key];
+  if (typeof value !== "string") fail(`${field}.${key}`, "expected a string");
+  if (value.length > max) {
+    fail(`${field}.${key}`, `is ${value.length} characters, the limit is ${max}`);
+  }
+  return value;
+}
+
+function optionalString(
+  row: Record<string, unknown>,
+  key: string,
+  field: string,
+  max = CAPS.text,
+): string | null {
+  const value = row[key];
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") fail(`${field}.${key}`, "expected a string");
+  if (value.length > max) {
+    fail(`${field}.${key}`, `is ${value.length} characters, the limit is ${max}`);
+  }
+  return value;
+}
+
+function needNumber(row: Record<string, unknown>, key: string, field: string): number {
+  const value = row[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    fail(`${field}.${key}`, "expected a finite number");
+  }
+  return value;
+}
+
+function optionalNumber(
+  row: Record<string, unknown>,
+  key: string,
+  field: string,
+): number | null {
+  const value = row[key];
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    fail(`${field}.${key}`, "expected a finite number");
+  }
+  return value;
+}
+
+function needTimestamp(
+  row: Record<string, unknown>,
+  key: string,
+  field: string,
+): number {
+  const value = row[key];
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    fail(`${field}.${key}`, "expected a timestamp in milliseconds");
+  }
+  return Math.trunc(value);
+}
+
+function optionalTimestamp(
+  row: Record<string, unknown>,
+  key: string,
+  field: string,
+): number | null {
+  const value = row[key];
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    fail(`${field}.${key}`, "expected a timestamp in milliseconds");
+  }
+  return Math.trunc(value);
+}
+
+function needLatitude(row: Record<string, unknown>, key: string, field: string): number {
+  const value = needNumber(row, key, field);
+  if (value < -90 || value > 90) {
+    fail(`${field}.${key}`, `${value} is outside -90 to 90`);
+  }
+  return value;
+}
+
+function needLongitude(row: Record<string, unknown>, key: string, field: string): number {
+  const value = needNumber(row, key, field);
+  if (value < -180 || value > 180) {
+    fail(`${field}.${key}`, `${value} is outside -180 to 180`);
+  }
+  return value;
+}
+
+function needId(row: Record<string, unknown>, field: string): string {
+  const id = needString(row, "id", field, CAPS.id);
+  if (id.trim() === "") fail(`${field}.id`, "must not be empty");
+  return id;
+}
+
+interface IncomingLine {
+  id: string;
+  name: string;
+  colorKey: string;
+  status: string;
+  fiberType: string;
+  coreCount: number;
+  notes: string;
+  vertices: Array<[number, number]>;
+  lengthMapM: number;
+  slackPercent: number;
+  measuredLengthM: number | null;
+  parentLineId: string | null;
+  branchChainageM: number | null;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+}
+
+interface IncomingPin {
+  id: string;
+  lineId: string | null;
+  type: string;
+  lat: number;
+  lon: number;
+  snapLat: number;
+  snapLon: number;
+  chainageM: number | null;
+  gpsAccuracyM: number | null;
+  label: string;
+  notes: string;
+  state: string;
+  spliceLossDbm: number | null;
+  coilLengthM: number;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+}
+
+interface IncomingEvent {
+  id: string;
+  pinId: string;
+  kind: string;
+  eventDate: number;
+  repairMethod: string | null;
+  spliceLossDbm: number | null;
+  note: string;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+}
+
+interface IncomingRepairLog {
+  id: string;
+  lineId: string | null;
+  pinId: string | null;
+  spliceLossDbm: number;
+  fiberCutLocation: string;
+  cutLat: number;
+  cutLon: number;
+  chainageM: number | null;
+  repairTimestamp: number;
+  technicianName: string;
+  repairMethod: string;
+  closureTag: string;
+  notes: string;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+}
+
+interface IncomingPlaceLabel {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+}
+
+interface IncomingBundle {
+  version: 1 | 2;
+  lines: IncomingLine[];
+  pins: IncomingPin[];
+  events: IncomingEvent[];
+  repairLogs: IncomingRepairLog[];
+  placeLabels: IncomingPlaceLabel[];
+}
+
+/**
+ * Reads a bundle and refuses anything that is not shaped like one.
+ *
+ * The checks are deliberately literal: every number has to be finite, every
+ * coordinate has to be on the globe, every row has to have an id. A bundle
+ * that fails one of these is not a bundle, and half of it being applied would
+ * be worse than none of it.
+ */
+export function validateBundle(json: string): IncomingBundle {
+  if (json.length > CAPS.jsonBytes) {
+    fail("bundle", `is ${(json.length / 1_048_576).toFixed(1)} MB, the limit is ${
+      CAPS.jsonBytes / 1_048_576
+    } MB`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch (err) {
+    fail("bundle", `is not valid JSON (${(err as Error).message})`);
+  }
+
+  const root = needObject(parsed, "bundle");
+  if (root.format !== "fiberMAP-bundle") {
+    fail("bundle.format", "is not a fiberMAP bundle");
+  }
+
+  const rawVersion = root.version === undefined ? 1 : root.version;
+  if (rawVersion !== 1 && rawVersion !== 2) {
+    fail(
+      "bundle.version",
+      `is ${String(rawVersion)}, this app reads version 1 and ${BUNDLE_VERSION}`,
+    );
+  }
+  const version = rawVersion as 1 | 2;
+
+  const lineRows = needArray(root.lines ?? [], "lines", CAPS.lines);
+  const pinRows = needArray(root.pins ?? [], "pins", CAPS.pins);
+  const eventRows = needArray(root.events ?? [], "events", CAPS.events);
+  const logRows = needArray(root.repairLogs ?? [], "repairLogs", CAPS.repairLogs);
+  const labelRows = needArray(root.placeLabels ?? [], "placeLabels", CAPS.placeLabels);
+
+  const lines: IncomingLine[] = lineRows.map((raw, index) => {
+    const field = `lines[${index}]`;
+    const row = needObject(raw, field);
+    const id = needId(row, field);
+    const verticesRaw = needArray(
+      row.vertices ?? [],
+      `${field}.vertices`,
+      CAPS.verticesPerLine,
+    );
+    const vertices = verticesRaw.map((v, vi) => {
+      const pair = needArray(v, `${field}.vertices[${vi}]`, 2);
+      if (pair.length !== 2) {
+        fail(`${field}.vertices[${vi}]`, "expected a latitude and a longitude");
+      }
+      const lat = needLatitude(
+        { lat: pair[0] },
+        "lat",
+        `${field}.vertices[${vi}]`,
+      );
+      const lon = needLongitude(
+        { lon: pair[1] },
+        "lon",
+        `${field}.vertices[${vi}]`,
+      );
+      return [lat, lon] as [number, number];
+    });
+    const createdAt = optionalTimestamp(row, "createdAt", field) ?? 0;
+    const updatedAt = optionalTimestamp(row, "updatedAt", field) ?? createdAt;
+    return {
+      id,
+      name: needString(row, "name", field),
+      colorKey: optionalString(row, "colorKey", field) ?? "blue",
+      status: (optionalString(row, "status", field) ?? "ACTIVE").toLowerCase(),
+      fiberType: optionalString(row, "fiberType", field) ?? "G.652D Single Mode",
+      coreCount: needNumber(row, "coreCount", field),
+      notes: optionalString(row, "notes", field) ?? "",
+      vertices,
+      lengthMapM: needNumber(row, "lengthMapM", field),
+      slackPercent: needNumber(row, "slackPercent", field),
+      measuredLengthM: optionalNumber(row, "measuredLengthM", field),
+      parentLineId: optionalString(row, "parentLineId", field),
+      branchChainageM: optionalNumber(row, "branchChainageM", field),
+      createdAt,
+      updatedAt,
+      deletedAt: optionalTimestamp(row, "deletedAt", field),
+    };
+  });
+
+  const pins: IncomingPin[] = pinRows.map((raw, index) => {
+    const field = `pins[${index}]`;
+    const row = needObject(raw, field);
+    const id = needId(row, field);
+    const createdAt = optionalTimestamp(row, "createdAt", field) ?? 0;
+    const updatedAt = optionalTimestamp(row, "updatedAt", field) ?? createdAt;
+    const chainage = optionalNumber(row, "chainageM", field);
+    return {
+      id,
+      lineId: optionalString(row, "lineId", field) || null,
+      type: (optionalString(row, "type", field) ?? "CUT_REPAIR").toLowerCase(),
+      lat: needLatitude(row, "lat", field),
+      lon: needLongitude(row, "lon", field),
+      snapLat: optionalNumber(row, "snapLat", field) ?? needLatitude(row, "lat", field),
+      snapLon: optionalNumber(row, "snapLon", field) ?? needLongitude(row, "lon", field),
+      chainageM: chainage !== null && chainage >= 0 ? chainage : null,
+      gpsAccuracyM: optionalNumber(row, "gpsAccuracyM", field),
+      label: optionalString(row, "label", field) ?? "",
+      notes: optionalString(row, "notes", field) ?? "",
+      state: (optionalString(row, "state", field) ?? "NONE").toLowerCase(),
+      spliceLossDbm: optionalNumber(row, "spliceLossDbm", field),
+      coilLengthM: needNumber(row, "coilLengthM", field),
+      createdAt,
+      updatedAt,
+      deletedAt: optionalTimestamp(row, "deletedAt", field),
+    };
+  });
+
+  const events: IncomingEvent[] = eventRows.map((raw, index) => {
+    const field = `events[${index}]`;
+    const row = needObject(raw, field);
+    const id = needId(row, field);
+    const eventDate = needTimestamp(row, "eventDate", field);
+    const createdAt = optionalTimestamp(row, "createdAt", field) ?? eventDate;
+    const updatedAt = optionalTimestamp(row, "updatedAt", field) ?? eventDate;
+    return {
+      id,
+      pinId: needString(row, "pinId", field),
+      kind: needString(row, "kind", field),
+      eventDate,
+      repairMethod: optionalString(row, "repairMethod", field),
+      spliceLossDbm: optionalNumber(row, "spliceLossDbm", field),
+      note: optionalString(row, "note", field) ?? "",
+      createdAt,
+      updatedAt,
+      deletedAt: optionalTimestamp(row, "deletedAt", field),
+    };
+  });
+
+  const repairLogs: IncomingRepairLog[] = logRows.map((raw, index) => {
+    const field = `repairLogs[${index}]`;
+    const row = needObject(raw, field);
+    const id = needId(row, field);
+    const repairTimestamp = needTimestamp(row, "repairTimestamp", field);
+    const createdAt = optionalTimestamp(row, "createdAt", field) ?? repairTimestamp;
+    const updatedAt = optionalTimestamp(row, "updatedAt", field) ?? repairTimestamp;
+    const chainage = optionalNumber(row, "chainageM", field);
+    return {
+      id,
+      lineId: optionalString(row, "lineId", field) || null,
+      pinId: optionalString(row, "pinId", field) || null,
+      spliceLossDbm: needNumber(row, "spliceLossDbm", field),
+      fiberCutLocation: optionalString(row, "fiberCutLocation", field) ?? "",
+      cutLat: needLatitude(row, "cutLat", field),
+      cutLon: needLongitude(row, "cutLon", field),
+      chainageM: chainage !== null && chainage >= 0 ? chainage : null,
+      repairTimestamp,
+      technicianName: optionalString(row, "technicianName", field) ?? "",
+      repairMethod: (optionalString(row, "repairMethod", field) ?? "FUSION").toLowerCase(),
+      closureTag: optionalString(row, "closureTag", field) ?? "",
+      notes: optionalString(row, "notes", field) ?? "",
+      createdAt,
+      updatedAt,
+      deletedAt: optionalTimestamp(row, "deletedAt", field),
+    };
+  });
+
+  const placeLabels: IncomingPlaceLabel[] = labelRows.map((raw, index) => {
+    const field = `placeLabels[${index}]`;
+    const row = needObject(raw, field);
+    const id = needId(row, field);
+    const createdAt = optionalTimestamp(row, "createdAt", field) ?? 0;
+    const updatedAt = optionalTimestamp(row, "updatedAt", field) ?? createdAt;
+    return {
+      id,
+      name: needString(row, "name", field),
+      lat: needLatitude(row, "lat", field),
+      lon: needLongitude(row, "lon", field),
+      createdAt,
+      updatedAt,
+      deletedAt: optionalTimestamp(row, "deletedAt", field),
+    };
+  });
+
+  return { version, lines, pins, events, repairLogs, placeLabels };
+}
+
+export interface BundleImportPlan {
+  preview: ImportPreview;
+  lines: LineRow[];
+  pins: PinRow[];
+  pinEvents: PinEventRow[];
+  repairLogs: RepairLogRow[];
+  placeLabels: PlaceLabelRow[];
+}
+
+const emptyCounts = (): ImportCounts => ({
+  new: 0,
+  updated: 0,
+  skipped: 0,
+  deleted: 0,
+});
+
+/**
+ * Works out what an import would do, without doing it.
+ *
+ * The merge is by time, not by arrival. A row wins only if it is strictly
+ * newer than the row already on the phone, so a bundle that is a week old
+ * cannot roll back a week of work. A record that was deleted here stays
+ * deleted unless the incoming row is newer than the deletion.
+ */
+export async function planBundleImport(json: string): Promise<BundleImportPlan> {
+  const bundle = validateBundle(json);
+
+  const plan: BundleImportPlan = {
+    preview: {
+      lines: emptyCounts(),
+      pins: emptyCounts(),
+      events: emptyCounts(),
+      repairLogs: emptyCounts(),
+      placeLabels: emptyCounts(),
+      totals: emptyCounts(),
+    },
+    lines: [],
+    pins: [],
+    pinEvents: [],
+    repairLogs: [],
+    placeLabels: [],
+  };
+
+  const [localLines, localPins, localEvents, localLogs, localLabels] = await Promise.all([
+    db.lines.bulkGet(bundle.lines.map((l) => l.id)),
+    db.pins.bulkGet(bundle.pins.map((p) => p.id)),
+    db.pinEvents.bulkGet(bundle.events.map((e) => e.id)),
+    db.repairLogs.bulkGet(bundle.repairLogs.map((r) => r.id)),
+    db.placeLabels.bulkGet(bundle.placeLabels.map((l) => l.id)),
+  ]);
+
+  bundle.lines.forEach((incoming, index) => {
+    const local = localLines[index];
+    const counts = plan.preview.lines;
+    if (!local) {
+      counts.new++;
+      plan.lines.push(toLineRow(incoming));
+      return;
+    }
+    if (incoming.updatedAt > local.updatedAt) {
+      if (incoming.deletedAt !== null) counts.deleted++;
+      else counts.updated++;
+      plan.lines.push(toLineRow(incoming));
+    } else {
+      counts.skipped++;
+    }
+  });
+
+  bundle.pins.forEach((incoming, index) => {
+    const local = localPins[index];
+    const counts = plan.preview.pins;
+    if (!local) {
+      counts.new++;
+      plan.pins.push(toPinRow(incoming));
+      return;
+    }
+    if (incoming.updatedAt > local.updatedAt) {
+      if (incoming.deletedAt !== null) counts.deleted++;
+      else counts.updated++;
+      plan.pins.push(toPinRow(incoming));
+    } else {
+      counts.skipped++;
+    }
+  });
+
+  bundle.events.forEach((incoming, index) => {
+    const local = localEvents[index];
+    const counts = plan.preview.events;
+    if (!local) {
+      counts.new++;
+      plan.pinEvents.push(toEventRow(incoming));
+      return;
+    }
+    if (incoming.updatedAt > local.updatedAt) {
+      if (incoming.deletedAt !== null) counts.deleted++;
+      else counts.updated++;
+      plan.pinEvents.push(toEventRow(incoming));
+    } else {
+      counts.skipped++;
+    }
+  });
+
+  bundle.repairLogs.forEach((incoming, index) => {
+    const local = localLogs[index];
+    const counts = plan.preview.repairLogs;
+    if (!local) {
+      counts.new++;
+      plan.repairLogs.push(toRepairLogRow(incoming));
+      return;
+    }
+    if (incoming.updatedAt > local.updatedAt) {
+      if (incoming.deletedAt !== null) counts.deleted++;
+      else counts.updated++;
+      plan.repairLogs.push(toRepairLogRow(incoming));
+    } else {
+      counts.skipped++;
+    }
+  });
+
+  bundle.placeLabels.forEach((incoming, index) => {
+    const local = localLabels[index];
+    const counts = plan.preview.placeLabels;
+    if (!local) {
+      counts.new++;
+      plan.placeLabels.push(toPlaceLabelRow(incoming));
+      return;
+    }
+    if (incoming.updatedAt > local.updatedAt) {
+      if (incoming.deletedAt !== null) counts.deleted++;
+      else counts.updated++;
+      plan.placeLabels.push(toPlaceLabelRow(incoming));
+    } else {
+      counts.skipped++;
+    }
+  });
+
+  for (const table of [
+    plan.preview.lines,
+    plan.preview.pins,
+    plan.preview.events,
+    plan.preview.repairLogs,
+    plan.preview.placeLabels,
+  ]) {
+    plan.preview.totals.new += table.new;
+    plan.preview.totals.updated += table.updated;
+    plan.preview.totals.skipped += table.skipped;
+    plan.preview.totals.deleted += table.deleted;
+  }
+
+  return plan;
+}
+
+/** Writes a plan. Everything lands in one transaction or nothing does. */
+export async function applyBundleImport(plan: BundleImportPlan): Promise<ImportResult> {
   await db.transaction(
     "rw",
     db.lines,
@@ -320,105 +956,117 @@ export async function importFmapBundle(json: string): Promise<ImportResult> {
     db.repairLogs,
     db.placeLabels,
     async () => {
-      await db.lines.bulkPut(
-        lines.map((l) => ({
-          id: l.id,
-          name: l.name,
-          colorKey: l.colorKey || "blue",
-          status: upper(l.status, "ACTIVE").toLowerCase(),
-          fiberType: l.fiberType || "G.652D Single Mode",
-          coreCount: l.coreCount ?? 24,
-          notes: l.notes ?? "",
-          geometry: encodeVertices(l.vertices ?? []),
-          lengthMapM: l.lengthMapM ?? 0,
-          slackPercent: l.slackPercent ?? 3,
-          measuredLengthM: l.measuredLengthM ?? null,
-          parentLineId: l.parentLineId ?? null,
-          branchChainageM: l.branchChainageM ?? null,
-          createdAt: l.createdAt ?? now,
-          updatedAt: l.updatedAt ?? now,
-          deletedAt: null,
-        })),
-      );
-
-      await db.pins.bulkPut(
-        pins.map((p) => ({
-          id: p.id,
-          lineId: p.lineId || null,
-          type: upper(p.type, "CUT_REPAIR").toLowerCase(),
-          lat: p.lat,
-          lon: p.lon,
-          snapLat: p.snapLat ?? p.lat,
-          snapLon: p.snapLon ?? p.lon,
-          chainageM: p.chainageM !== undefined && p.chainageM >= 0 ? p.chainageM : null,
-          gpsAccuracyM: p.gpsAccuracyM ?? null,
-          label: p.label ?? "",
-          notes: p.notes ?? "",
-          state: upper(p.state, "NONE").toLowerCase(),
-          spliceLossDbm: p.spliceLossDbm ?? null,
-          coilLengthM: p.coilLengthM ?? 0,
-          createdAt: p.createdAt ?? now,
-          updatedAt: p.updatedAt ?? now,
-          deletedAt: null,
-        })),
-      );
-
-      await db.pinEvents.bulkPut(
-        events.map((e) => ({
-          id: e.id,
-          pinId: e.pinId,
-          kind: e.kind,
-          eventDate: e.eventDate,
-          repairMethod: e.repairMethod ? e.repairMethod.toLowerCase() : null,
-          spliceLossDbm: e.spliceLossDbm ?? null,
-          note: e.note ?? "",
-          createdAt: now,
-          updatedAt: now,
-          deletedAt: null,
-        })),
-      );
-
-      await db.repairLogs.bulkPut(
-        repairLogs.map((r) => ({
-          id: r.id,
-          lineId: r.lineId || null,
-          pinId: r.pinId || null,
-          spliceLossDbm: r.spliceLossDbm ?? 0,
-          fiberCutLocation: r.fiberCutLocation ?? "",
-          cutLat: r.cutLat,
-          cutLon: r.cutLon,
-          chainageM: r.chainageM !== undefined && r.chainageM >= 0 ? r.chainageM : null,
-          repairTimestamp: r.repairTimestamp,
-          technicianName: r.technicianName ?? "",
-          repairMethod: upper(r.repairMethod, "FUSION").toLowerCase(),
-          closureTag: r.closureTag ?? "",
-          notes: r.notes ?? "",
-          createdAt: now,
-          updatedAt: now,
-          deletedAt: null,
-        })),
-      );
-
-      await db.placeLabels.bulkPut(
-        placeLabels.map((l) => ({
-          id: l.id,
-          name: l.name,
-          lat: l.lat,
-          lon: l.lon,
-          createdAt: l.createdAt ?? now,
-          updatedAt: now,
-          deletedAt: null,
-        })),
-      );
+      if (plan.lines.length) await db.lines.bulkPut(plan.lines);
+      if (plan.pins.length) await db.pins.bulkPut(plan.pins);
+      if (plan.pinEvents.length) await db.pinEvents.bulkPut(plan.pinEvents);
+      if (plan.repairLogs.length) await db.repairLogs.bulkPut(plan.repairLogs);
+      if (plan.placeLabels.length) await db.placeLabels.bulkPut(plan.placeLabels);
     },
   );
 
   return {
-    lines: lines.length,
-    pins: pins.length,
-    events: events.length,
-    repairLogs: repairLogs.length,
-    placeLabels: placeLabels.length,
+    lines: plan.lines.length,
+    pins: plan.pins.length,
+    events: plan.pinEvents.length,
+    repairLogs: plan.repairLogs.length,
+    placeLabels: plan.placeLabels.length,
+  };
+}
+
+/** Plans and writes in one go. The app uses the two steps so it can show a preview. */
+export async function importFmapBundle(json: string): Promise<ImportResult> {
+  const plan = await planBundleImport(json);
+  return applyBundleImport(plan);
+}
+
+function toLineRow(incoming: IncomingLine): LineRow {
+  return {
+    id: incoming.id,
+    name: incoming.name,
+    colorKey: incoming.colorKey,
+    status: incoming.status,
+    fiberType: incoming.fiberType,
+    coreCount: incoming.coreCount,
+    notes: incoming.notes,
+    geometry: encodeVertices(incoming.vertices),
+    lengthMapM: incoming.lengthMapM,
+    slackPercent: incoming.slackPercent,
+    measuredLengthM: incoming.measuredLengthM,
+    parentLineId: incoming.parentLineId,
+    branchChainageM: incoming.branchChainageM,
+    createdAt: incoming.createdAt,
+    updatedAt: incoming.updatedAt,
+    deletedAt: incoming.deletedAt,
+  };
+}
+
+function toPinRow(incoming: IncomingPin): PinRow {
+  return {
+    id: incoming.id,
+    lineId: incoming.lineId,
+    type: incoming.type,
+    lat: incoming.lat,
+    lon: incoming.lon,
+    snapLat: incoming.snapLat,
+    snapLon: incoming.snapLon,
+    chainageM: incoming.chainageM,
+    gpsAccuracyM: incoming.gpsAccuracyM,
+    label: incoming.label,
+    notes: incoming.notes,
+    state: incoming.state,
+    spliceLossDbm: incoming.spliceLossDbm,
+    coilLengthM: incoming.coilLengthM,
+    createdAt: incoming.createdAt,
+    updatedAt: incoming.updatedAt,
+    deletedAt: incoming.deletedAt,
+  };
+}
+
+function toEventRow(incoming: IncomingEvent): PinEventRow {
+  return {
+    id: incoming.id,
+    pinId: incoming.pinId,
+    kind: incoming.kind,
+    eventDate: incoming.eventDate,
+    repairMethod: incoming.repairMethod,
+    spliceLossDbm: incoming.spliceLossDbm,
+    note: incoming.note,
+    createdAt: incoming.createdAt,
+    updatedAt: incoming.updatedAt,
+    deletedAt: incoming.deletedAt,
+  };
+}
+
+function toRepairLogRow(incoming: IncomingRepairLog): RepairLogRow {
+  return {
+    id: incoming.id,
+    lineId: incoming.lineId,
+    pinId: incoming.pinId,
+    spliceLossDbm: incoming.spliceLossDbm,
+    fiberCutLocation: incoming.fiberCutLocation,
+    cutLat: incoming.cutLat,
+    cutLon: incoming.cutLon,
+    chainageM: incoming.chainageM,
+    repairTimestamp: incoming.repairTimestamp,
+    technicianName: incoming.technicianName,
+    repairMethod: incoming.repairMethod,
+    closureTag: incoming.closureTag,
+    notes: incoming.notes,
+    createdAt: incoming.createdAt,
+    updatedAt: incoming.updatedAt,
+    deletedAt: incoming.deletedAt,
+  };
+}
+
+function toPlaceLabelRow(incoming: IncomingPlaceLabel): PlaceLabelRow {
+  return {
+    id: incoming.id,
+    name: incoming.name,
+    lat: incoming.lat,
+    lon: incoming.lon,
+    createdAt: incoming.createdAt,
+    updatedAt: incoming.updatedAt,
+    deletedAt: incoming.deletedAt,
   };
 }
 
