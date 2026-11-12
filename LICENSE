@@ -1,0 +1,22 @@
+Copyright (c) 2026 ainzkowfi
+
+All rights reserved.
+
+This software, its source code and the documentation in this repository are
+the property of the copyright holder. No part of it may be copied, modified,
+published, distributed, sublicensed or used in any form without the prior
+written permission of the copyright holder.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Third party material in this repository keeps its own licence:
+
+- `third_party/pmtiles-LICENSE` covers the go-pmtiles command line tool.
+- `third_party/OSM-NOTICE.md` covers the OpenStreetMap data in the basemap
+  under the Open Database License. The attribution "© OpenStreetMap
+  contributors" must stay on the map wherever the data is shown.
