@@ -6,6 +6,7 @@ import { pinFullName } from "../domain/labels";
 import { pinColor } from "./MapView";
 import { useEscape } from "./useEscape";
 import { useDialog } from "./useDialog";
+import { useEnter } from "./useEnter";
 
 export interface PinSheetProps {
   pin: FiberPin;
@@ -52,6 +53,27 @@ export function PinSheet({
 
   const pinEvents = events.filter((e) => e.pinId === pin.id);
   const sheetRef = useRef<HTMLDivElement>(null);
+
+  const save = () =>
+    onSave({
+      label,
+      notes,
+      type,
+      state,
+      lineId: lineId || null,
+      spliceLossDbm: parseFloat(loss) || null,
+      coilLengthM: parseFloat(coil) || 0,
+    });
+
+  const confirmRepair = () => {
+    const parsed = parseFloat(loss);
+    onMarkRepaired(method, Number.isFinite(parsed) ? parsed : null, repairNote);
+    setShowRepair(false);
+  };
+
+  // Enter in a field submits the action that is in front of the crew. When
+  // the repair form is open, that is the repair; otherwise it is the save.
+  useEnter(() => (showRepair ? confirmRepair() : save()));
 
   // A repair confirmed in the panel updates the stored pin. The chips read the
   // stored state, never a local guess.

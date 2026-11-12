@@ -13,6 +13,7 @@ import { getMountedKey } from "./ui/pmtilesLoader";
 import { useGpsTracker } from "./ui/useGpsTracker";
 import { useEscape } from "./ui/useEscape";
 import { useDialog } from "./ui/useDialog";
+import { useEnter } from "./ui/useEnter";
 import { ConfirmSheet } from "./ui/ConfirmSheet";
 import { PlaceLabelSheet } from "./ui/PlaceLabelSheet";
 import { requestPersistence } from "./core/storage";
@@ -816,7 +817,18 @@ function LineForm({
   const [status, setStatus] = useState<LineStatus>("ACTIVE");
   const sheetRef = useRef<HTMLDivElement>(null);
 
+  const submit = () =>
+    onSave({
+      name,
+      fiberType,
+      coreCount: Number(coreCount) || 0,
+      notes,
+      colorKey,
+      status,
+    });
+
   useDialog(sheetRef);
+  useEnter(submit);
 
   return (
     <div className="scrim" onClick={onCancel}>

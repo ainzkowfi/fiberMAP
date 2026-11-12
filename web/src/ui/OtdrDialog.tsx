@@ -9,6 +9,7 @@ import {
 import { useEscape } from "./useEscape";
 import { useDialog } from "./useDialog";
 import { useSetting } from "../data/hooks";
+import { useEnter } from "./useEnter";
 
 export interface OtdrDialogProps {
   line: FiberLine;
@@ -59,6 +60,10 @@ export function OtdrDialog({
 
   useEscape(onClose);
   useDialog(sheetRef);
+  // Enter shows the solved location, which is the first thing to check.
+  useEnter(() => {
+    if (match) onLocateOnMap(match);
+  });
 
   return (
     <div className="scrim" onClick={onClose}>

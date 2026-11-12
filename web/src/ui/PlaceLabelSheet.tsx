@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useEscape } from "./useEscape";
 import { useDialog } from "./useDialog";
+import { useEnter } from "./useEnter";
 
 export interface PlaceLabelSheetProps {
   name: string;
@@ -28,8 +29,13 @@ export function PlaceLabelSheet({
   const [text, setText] = useState(name);
   const sheetRef = useRef<HTMLDivElement>(null);
 
+  const save = () => {
+    if (text.trim()) onSave(text.trim());
+  };
+
   useEscape(onCancel);
   useDialog(sheetRef);
+  useEnter(save);
 
   return (
     <div className="scrim" onClick={onCancel}>
