@@ -389,6 +389,25 @@ describe("bundle import and orphans", () => {
     expect((await db.pins.get("pin-1"))?.deletedAt).toBeNull();
   });
 
+  it("keeps an edit made between the preview and the import", async () => {
+    await putLocalLine({ name: "Local name", updatedAt: T0 });
+    const plan = await planBundleImport(
+      bundle({ lines: [line({ name: "Incoming name", updatedAt: T0 + 1000 })] }),
+    );
+    expect(plan.preview.lines.updated).toBe(1);
+
+    // The crew edits the row while the preview is still on screen.
+    await db.lines.update("line-1", {
+      name: "Edited on the phone",
+      updatedAt: T0 + 5000,
+    });
+
+    await applyBundleImport(plan);
+    const stored = await db.lines.get("line-1");
+    expect(stored?.name).toBe("Edited on the phone");
+    expect(stored?.updatedAt).toBe(T0 + 5000);
+  });
+
   it("takes a local event down when the pin under it is deleted", async () => {
     await putLocalLine();
     await putLocalPin({ deletedAt: T0, updatedAt: T0 });

@@ -40,10 +40,11 @@ export function useImportPreview(): ImportPreviewFlow {
 
   const apply = useCallback(async () => {
     if (!plan) return null;
-    const totals = plan.preview.totals;
-    await applyBundleImport(plan);
+    const result = await applyBundleImport(plan);
     setPlan(null);
-    return totals;
+    // The write re-plans itself, so these are the numbers that were actually
+    // written and not the ones that were on screen when the crew said yes.
+    return result.preview.totals;
   }, [plan]);
 
   const cancel = useCallback(() => setPlan(null), []);

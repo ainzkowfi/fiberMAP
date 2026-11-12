@@ -356,6 +356,8 @@ export interface ImportResult {
   events: number;
   repairLogs: number;
   placeLabels: number;
+  /** What the write actually did, which can differ from the preview. */
+  preview: ImportPreview;
 }
 
 /** What an import would do to each kind of row. */
@@ -1042,9 +1044,17 @@ export async function planBundleImport(json: string): Promise<BundleImportPlan> 
   return plan;
 }
 
-/** Writes a plan. Everything lands in one transaction or nothing does. */
+/**
+ * Writes a plan. Everything lands in one transaction or nothing does.
+ *
+ * The plan is worked out again inside the transaction. The crew may have
+ * edited a row between the preview and the Import tap, and that edit has to
+ * survive: the merge is by time, so a row that is now newer than the incoming
+ * one wins and the incoming one is left alone. The numbers that come back are
+ * the ones that were actually written, which can differ from the preview.
+ */
 export async function applyBundleImport(plan: BundleImportPlan): Promise<ImportResult> {
-  await db.transaction(
+  return db.transaction(
     "rw",
     db.lines,
     db.pins,
@@ -1052,21 +1062,23 @@ export async function applyBundleImport(plan: BundleImportPlan): Promise<ImportR
     db.repairLogs,
     db.placeLabels,
     async () => {
-      if (plan.lines.length) await db.lines.bulkPut(plan.lines);
-      if (plan.pins.length) await db.pins.bulkPut(plan.pins);
-      if (plan.pinEvents.length) await db.pinEvents.bulkPut(plan.pinEvents);
-      if (plan.repairLogs.length) await db.repairLogs.bulkPut(plan.repairLogs);
-      if (plan.placeLabels.length) await db.placeLabels.bulkPut(plan.placeLabels);
+      const fresh = await planBundleImport(plan.json);
+      if (fresh.lines.length) await db.lines.bulkPut(fresh.lines);
+      if (fresh.pins.length) await db.pins.bulkPut(fresh.pins);
+      if (fresh.pinEvents.length) await db.pinEvents.bulkPut(fresh.pinEvents);
+      if (fresh.repairLogs.length) await db.repairLogs.bulkPut(fresh.repairLogs);
+      if (fresh.placeLabels.length) await db.placeLabels.bulkPut(fresh.placeLabels);
+
+      return {
+        lines: fresh.lines.length,
+        pins: fresh.pins.length,
+        events: fresh.pinEvents.length,
+        repairLogs: fresh.repairLogs.length,
+        placeLabels: fresh.placeLabels.length,
+        preview: fresh.preview,
+      };
     },
   );
-
-  return {
-    lines: plan.lines.length,
-    pins: plan.pins.length,
-    events: plan.pinEvents.length,
-    repairLogs: plan.repairLogs.length,
-    placeLabels: plan.placeLabels.length,
-  };
 }
 
 /** Plans and writes in one go. The app uses the two steps so it can show a preview. */
