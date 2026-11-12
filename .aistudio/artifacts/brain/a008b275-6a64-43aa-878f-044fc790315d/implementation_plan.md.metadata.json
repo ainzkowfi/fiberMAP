@@ -1,6 +1,0 @@
-{
-  "summary":  "Implementation plan for fiberMAP:\n- Fluid map panning and zoom without gesture lock.\n- Automatic camera centering and zoom when clicking lines or pin entries from list/detail views.\n- Hold-click (long-press) anywhere on the map to drop pins, supporting off-road client drops.\n- Direct repair logging with optical splice loss metrics (e.g., 0.01 dBm / dB) and immediate cut-to-repair status transition.",
-  "updatedAt":  "2026-11-10T12:07:59.117377198Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}
