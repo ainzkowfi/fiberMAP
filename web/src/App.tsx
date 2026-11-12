@@ -427,6 +427,11 @@ export default function App() {
               setPlaceMode(false);
               setLabelDraft({ id: null, name: "", lat: pt.lat, lon: pt.lon });
             }}
+            onPlaceZoom={(id) => {
+              const label = placeLabels.find((l) => l.id === id);
+              if (!label) return;
+              setFocus({ lat: label.lat, lon: label.lon, zoom: 16 });
+            }}
             onPlaceLabelClick={(id) => {
               const label = placeLabels.find((l) => l.id === id);
               if (!label) return;

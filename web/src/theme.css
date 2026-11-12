@@ -686,6 +686,71 @@ a:focus-visible {
   opacity: 1;
 }
 
+/* A name the crew wrote. It has to stand out from the map and be tappable to
+   rename, so it is a button in the app's own colour. */
+.map-label.crew {
+  pointer-events: auto;
+  cursor: default;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #ffffff;
+  background: var(--jacket);
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 2px 4px 2px 7px;
+  text-shadow: none;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.map-label.crew .map-label-name {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.map-label.crew .map-label-edit {
+  background: none;
+  border: 0;
+  padding: 0 2px 0 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.map-label.crew .map-label-edit:hover {
+  opacity: 1;
+}
+
+/* The map controls sit at the top of the bottom nav bar, where the thumb
+   reaches them without stretching. Zoom is left to the pinch gesture. */
+.map-bottom-bar {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: 8px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.map-bottom-bar > * {
+  pointer-events: auto;
+}
+
 /* Place names from the archive: quieter than the municipality names, because
    they are the smaller places. */
 .map-label.place {
@@ -695,31 +760,6 @@ a:focus-visible {
   opacity: 0.75;
 }
 
-/* A name the crew wrote. It has to stand out from the map and be tappable to
-   rename, so it is a button in the app's own colour. */
-.map-label.crew {
-  pointer-events: auto;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.35;
-  color: #ffffff;
-  background: var(--jacket);
-  border: 0;
-  border-radius: var(--radius-sm);
-  padding: 2px 7px;
-  text-shadow: none;
-  white-space: nowrap;
-}
-
-.map-label.crew:hover {
-  background: var(--ink);
-}
-
-[data-theme="dark"] .map-label.crew {
-  color: #06181c;
-}
 
 /* The basemap is OpenStreetMap data. The credit stays on the map, in a
    corner the thumb does not reach, and on a chip of the app's own surface so
@@ -735,6 +775,10 @@ a:focus-visible {
   border-radius: var(--radius-sm);
   padding: 1px 5px;
   pointer-events: none;
+}
+
+[data-theme="dark"] .map-label.crew {
+  color: #06181c;
 }
 
 /* ---------- Sheets / modals ---------- */

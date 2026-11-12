@@ -75,7 +75,9 @@ export interface MapViewProps {
   placingPlace: boolean;
   /** The crew tapped the map to put a name down. */
   onPlaceTapped: (pt: GeoPoint) => void;
-  /** The crew tapped one of their own names. */
+  /** The crew tapped one of their own names: zoom in on it. */
+  onPlaceZoom: (id: string) => void;
+  /** The crew tapped the pencil beside one of their own names: edit it. */
   onPlaceLabelClick: (id: string) => void;
   /** Opens the full record of a line tapped on the map. */
   onLineOpen: (lineId: string) => void;
@@ -111,6 +113,7 @@ export function MapView({
   placeLabels,
   placingPlace,
   onPlaceTapped,
+  onPlaceZoom,
   onPlaceLabelClick,
   onLineOpen,
   onFocusConsumed,
@@ -145,6 +148,7 @@ export function MapView({
     onLongPress,
     onPinClick,
     onPlaceTapped,
+    onPlaceZoom,
     onPlaceLabelClick,
     onUserMovedMap,
     drawMode,
@@ -155,6 +159,7 @@ export function MapView({
     onLongPress,
     onPinClick,
     onPlaceTapped,
+    onPlaceZoom,
     onPlaceLabelClick,
     onUserMovedMap,
     drawMode,
@@ -529,19 +534,38 @@ export function MapView({
       seen.add(label.id);
       let marker = placeMarkersRef.current.get(label.id);
       if (!marker) {
-        const el = document.createElement("button");
-        el.type = "button";
+        const el = document.createElement("div");
         el.className = "map-label crew";
-        el.addEventListener("click", (e) => {
+
+        const nameBtn = document.createElement("button");
+        nameBtn.type = "button";
+        nameBtn.className = "map-label-name";
+        nameBtn.textContent = label.name;
+        nameBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          handlers.current.onPlaceZoom(label.id);
+        });
+
+        const editBtn = document.createElement("button");
+        editBtn.type = "button";
+        editBtn.className = "map-label-edit";
+        editBtn.setAttribute("aria-label", "Edit " + label.name);
+        editBtn.textContent = "?";
+        editBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           handlers.current.onPlaceLabelClick(label.id);
         });
+
+        el.appendChild(nameBtn);
+        el.appendChild(editBtn);
         marker = new Marker({ element: el, anchor: "top", offset: [0, 10] })
           .setLngLat([label.lon, label.lat])
           .addTo(map);
         placeMarkersRef.current.set(label.id, marker);
       }
-      marker.getElement().textContent = label.name;
+      const el = marker.getElement();
+      const nameBtn = el.querySelector(".map-label-name");
+      if (nameBtn) nameBtn.textContent = label.name;
     }
     for (const [id, marker] of placeMarkersRef.current) {
       if (seen.has(id)) continue;
@@ -768,11 +792,7 @@ export function MapView({
     [center, zoom],
   );
 
-  const zoomBy = (delta: number) =>
-    mapRef.current?.easeTo({
-      zoom: Math.min(18, Math.max(8, (mapRef.current?.getZoom() ?? 13) + delta)),
-      duration: 220,
-    });
+  // (zoom buttons removed: the pinch gesture covers zoom)
 
   const recenter = () => {
     const map = mapRef.current;
@@ -791,13 +811,7 @@ export function MapView({
     <div className="map-wrap">
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
 
-      <div className={`map-hud ${hudSide}`}>
-        <button className="fab" onClick={() => zoomBy(1)} aria-label="Zoom in">
-          +
-        </button>
-        <button className="fab" onClick={() => zoomBy(-1)} aria-label="Zoom out">
-          −
-        </button>
+      <div className="map-bottom-bar">
         <button
           className="fab"
           onClick={recenter}
