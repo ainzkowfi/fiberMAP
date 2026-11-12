@@ -161,6 +161,17 @@ export async function deletePlaceLabel(id: string): Promise<void> {
   await db.placeLabels.update(id, { deletedAt: now, updatedAt: now });
 }
 
+/** When the crew last saved a backup file, or 0 if they never have. */
+export async function getLastBackupAt(): Promise<number> {
+  const row = await db.settings.get("lastBackupAt");
+  const value = row ? Number(row.value) : 0;
+  return Number.isFinite(value) ? value : 0;
+}
+
+export async function setLastBackupAt(timestamp: number): Promise<void> {
+  await db.settings.put({ key: "lastBackupAt", value: String(timestamp) });
+}
+
 // --- Mutations ---
 
 export async function saveLine(line: FiberLine): Promise<void> {

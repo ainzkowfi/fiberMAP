@@ -1,14 +1,18 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "../data/db";
+import { exportFmapBundle } from "../data/exportImport";
+import { getLastBackupAt, setLastBackupAt } from "../data/repo";
 import {
-  db,
-  type LineRow,
-  type PinEventRow,
-  type PinRow,
-  type RepairLogRow,
-  type SettingRow,
-} from "../data/db";
-import { ConfirmSheet } from "./ConfirmSheet";
+  backupFileName,
+  gunzipText,
+  gzipText,
+  isPersisted,
+  requestPersistence,
+  shareOrDownload,
+} from "../core/storage";
+import { ImportPreviewSheet } from "./ImportPreviewSheet";
+import { useImportPreview } from "./useImportPreview";
 
 export interface SettingsProps {
   theme: string;
@@ -19,6 +23,11 @@ export interface SettingsProps {
   onUnitsChanged: (v: string) => void;
   onOpenMapsManager: () => void;
   onBack: () => void;
+}
+
+function formatWhen(timestamp: number): string {
+  if (!timestamp) return "never";
+  return new Date(timestamp).toLocaleString();
 }
 
 export function Settings({
@@ -34,65 +43,63 @@ export function Settings({
   const mapFiles =
     useLiveQuery(async () => db.mapFiles.orderBy("buildDate").reverse().toArray(), [], []) ??
     [];
-  const [restoreStatus, setRestoreStatus] = useState<string | null>(null);
-  const [pendingRestore, setPendingRestore] = useState<File | null>(null);
+  const [protectedData, setProtectedData] = useState<boolean | null>(null);
+  const [lastBackupAt, setLastBackup] = useState(0);
+  const [status, setStatus] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const importFlow = useImportPreview();
 
-  const backup = async () => {
-    const payload = {
-      format: "fibermap-snapshot",
-      version: 1,
-      lines: await db.lines.toArray(),
-      pins: await db.pins.toArray(),
-      pinEvents: await db.pinEvents.toArray(),
-      repairLogs: await db.repairLogs.toArray(),
-      settings: await db.settings.toArray(),
-      exportedAt: Date.now(),
-    };
-    const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `fibermap-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  useEffect(() => {
+    void isPersisted().then(setProtectedData);
+    void getLastBackupAt().then(setLastBackup);
+  }, []);
+
+  const protect = async () => {
+    const granted = await requestPersistence();
+    setProtectedData(granted);
+    setStatus(
+      granted
+        ? "This phone will not clear the app's data on its own."
+        : "The browser declined. Keep a backup file somewhere safe.",
+    );
   };
 
   /**
-   * The snapshot has to be restorable or it is not a backup. The base map
-   * archive is deliberately excluded: it is 9 MB and re-downloading it is
-   * cheaper than carrying it through a JSON file.
+   * A backup file is the whole bundle, gzipped. It is the one copy that
+   * survives the browser clearing its storage, so it is handed to the share
+   * sheet where the phone has one and downloaded where it does not.
    */
-  const restore = async (file: File) => {
+  const saveBackup = async () => {
+    setStatus(null);
     try {
-      const payload = JSON.parse(await file.text()) as Record<string, unknown>;
-      const rows = ["lines", "pins", "pinEvents", "repairLogs", "settings"] as const;
-      if (!rows.every((key) => Array.isArray(payload[key]))) {
-        setRestoreStatus("Not a fiberMAP snapshot.");
-        return;
-      }
-      await db.transaction(
-        "rw",
-        [db.lines, db.pins, db.pinEvents, db.repairLogs, db.settings],
-        async () => {
-          await Promise.all([
-            db.lines.clear(),
-            db.pins.clear(),
-            db.pinEvents.clear(),
-            db.repairLogs.clear(),
-            db.settings.clear(),
-          ]);
-          await db.lines.bulkPut(payload.lines as LineRow[]);
-          await db.pins.bulkPut(payload.pins as PinRow[]);
-          await db.pinEvents.bulkPut(payload.pinEvents as PinEventRow[]);
-          await db.repairLogs.bulkPut(payload.repairLogs as RepairLogRow[]);
-          await db.settings.bulkPut(payload.settings as SettingRow[]);
-        },
+      const json = await exportFmapBundle();
+      const gz = await gzipText(json);
+      const file = new File([gz], backupFileName(), { type: "application/gzip" });
+      const result = await shareOrDownload(file, "fiberMAP backup");
+      if (result === "cancelled") return;
+      const now = Date.now();
+      await setLastBackupAt(now);
+      setLastBackup(now);
+      setStatus(
+        result === "shared"
+          ? "Backup handed over."
+          : "Backup file saved to this phone.",
       );
-      // The theme, units and handedness live in the database as well, so the
-      // app has to read them again rather than keep the ones it had.
-      window.location.reload();
     } catch (err) {
-      setRestoreStatus(`Restore failed: ${(err as Error).message}`);
+      setStatus(`Backup failed: ${(err as Error).message}`);
+    }
+  };
+
+  const openBackup = async (file: File) => {
+    setStatus(null);
+    try {
+      const text = file.name.endsWith(".fmap")
+        ? await gunzipText(file)
+        : await file.text();
+      const ok = await importFlow.prepare(text);
+      if (!ok) setStatus(`That file was refused: ${importFlow.error}`);
+    } catch (err) {
+      setStatus(`Could not read that file: ${(err as Error).message}`);
     }
   };
 
@@ -177,34 +184,63 @@ export function Settings({
         </div>
 
         <div className="card">
-          <strong>Backup</strong>
-          <p className="small muted" style={{ margin: "4px 0 10px" }}>
+          <div className="row between" style={{ marginBottom: 8 }}>
+            <strong>Backup</strong>
+            <span className="tag">Last: {formatWhen(lastBackupAt)}</span>
+          </div>
+          <p className="small muted" style={{ margin: "0 0 10px" }}>
             All lines, cuts and repairs live in this browser&apos;s local
-            database (IndexedDB). Nothing is sent to a server. A snapshot
-            carries the records and the preferences; the base map archive is
-            not included and can be downloaded again.
+            database. Nothing is sent to a server. A backup file carries them
+            to another phone; the base map archive is not included and can be
+            downloaded again.
           </p>
-          <button className="btn block" onClick={() => void backup()}>
-            Export snapshot
+          <button className="btn primary block" onClick={() => void saveBackup()}>
+            Save backup file
           </button>
-          <label className="btn block" style={{ marginTop: 8, textAlign: "center" }}>
-            Restore snapshot
-            <input
-              type="file"
-              accept="application/json,.json"
-              hidden
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) setPendingRestore(file);
-                e.target.value = "";
-              }}
-            />
-          </label>
-          {restoreStatus && (
+          <button
+            className="btn block"
+            style={{ marginTop: 8 }}
+            onClick={() => fileRef.current?.click()}
+          >
+            Open backup file
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".fmap,.json,application/gzip,application/json"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void openBackup(file);
+              e.target.value = "";
+            }}
+          />
+          {status && (
             <div className="small" role="status" style={{ marginTop: 10 }}>
-              {restoreStatus}
+              {status}
             </div>
           )}
+        </div>
+
+        <div className="card">
+          <div className="row between" style={{ marginBottom: 8 }}>
+            <strong>Storage</strong>
+            {protectedData === null ? (
+              <span className="tag">Checking</span>
+            ) : protectedData ? (
+              <span className="tag repaired">Protected</span>
+            ) : (
+              <span className="tag planned">At risk</span>
+            )}
+          </div>
+          <p className="small muted" style={{ margin: "0 0 10px" }}>
+            {protectedData
+              ? "The browser will not clear this app's data when the phone runs out of room."
+              : "Browser may clear this. A phone that runs out of room can take the records with it."}
+          </p>
+          <button className="btn block" onClick={() => void protect()}>
+            {protectedData ? "Check again" : "Protect this data"}
+          </button>
         </div>
 
         <div className="card small muted">
@@ -216,17 +252,19 @@ export function Settings({
         </div>
       </div>
 
-      {pendingRestore && (
-        <ConfirmSheet
-          title="Restore this snapshot?"
-          body="The lines, pins, repairs and preferences on this device are replaced by the snapshot. Export a snapshot first if you are not sure."
-          confirmLabel="Restore"
-          onCancel={() => setPendingRestore(null)}
-          onConfirm={() => {
-            const file = pendingRestore;
-            setPendingRestore(null);
-            void restore(file);
+      {importFlow.plan && (
+        <ImportPreviewSheet
+          preview={importFlow.plan.preview}
+          onImport={() => {
+            void importFlow.apply().then((totals) => {
+              setStatus(
+                totals
+                  ? `Imported ${totals.new} new, ${totals.updated} updated, ${totals.deleted} deleted.`
+                  : null,
+              );
+            });
           }}
+          onCancel={importFlow.cancel}
         />
       )}
     </div>

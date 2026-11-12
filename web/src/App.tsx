@@ -15,6 +15,7 @@ import { useEscape } from "./ui/useEscape";
 import { useDialog } from "./ui/useDialog";
 import { ConfirmSheet } from "./ui/ConfirmSheet";
 import { PlaceLabelSheet } from "./ui/PlaceLabelSheet";
+import { requestPersistence } from "./core/storage";
 import type { LineBubbleData } from "./ui/LineBubble";
 import { useEvents, useLines, useLinesWithStats, usePins, usePlaceLabels, useRepairLogs, useSetting } from "./data/hooks";
 import { db, ensureSeedData } from "./data/db";
@@ -144,6 +145,8 @@ export default function App() {
 
   useEffect(() => {
     void ensureSeedData();
+    // Ask the browser to keep the records when the phone runs out of room.
+    void requestPersistence();
   }, []);
 
   // Mount the basemap. If the device has none yet the province archive is
@@ -625,6 +628,7 @@ export default function App() {
                 events={events}
                 repairLogs={repairLogs}
                 placeLabels={placeLabels}
+                onOpenSettings={() => setOverlay("SETTINGS")}
               />
             )}
           </div>

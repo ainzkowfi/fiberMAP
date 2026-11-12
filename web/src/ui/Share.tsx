@@ -1,18 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FiberLine, FiberPin, PinEvent, PlaceLabel, RepairLog } from "../domain/models";
 import {
-  applyBundleImport,
   exportFmapBundle,
   generateCsv,
   generateGeoJson,
   generateKml,
-  planBundleImport,
-  type BundleImportPlan,
 } from "../data/exportImport";
 import { chunkPayload, frameToDataUrl, reassembleFrames, type QrFrame } from "../core/qr";
+import { useSetting } from "../data/hooks";
 import { useEscape } from "./useEscape";
 import { useDialog } from "./useDialog";
 import { ImportPreviewSheet } from "./ImportPreviewSheet";
+import { useImportPreview } from "./useImportPreview";
 
 export interface ShareProps {
   lines: FiberLine[];
@@ -20,6 +19,8 @@ export interface ShareProps {
   events: PinEvent[];
   repairLogs: RepairLog[];
   placeLabels: PlaceLabel[];
+  /** Opens Settings, where the backup file is saved. */
+  onOpenSettings: () => void;
 }
 
 type Preview =
@@ -36,7 +37,14 @@ function download(name: string, content: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
-export function Share({ lines, pins, events, repairLogs, placeLabels }: ShareProps) {
+export function Share({
+  lines,
+  pins,
+  events,
+  repairLogs,
+  placeLabels,
+  onOpenSettings,
+}: ShareProps) {
   const [preview, setPreview] = useState<Preview>(null);
   const [frames, setFrames] = useState<QrFrame[]>([]);
   const [frameIndex, setFrameIndex] = useState(0);
@@ -45,10 +53,12 @@ export function Share({ lines, pins, events, repairLogs, placeLabels }: SharePro
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [frameText, setFrameText] = useState("");
   const [frameStatus, setFrameStatus] = useState<string | null>(null);
-  const [plan, setPlan] = useState<BundleImportPlan | null>(null);
   const [bundleJson, setBundleJson] = useState("");
   const [bundleRows, setBundleRows] = useState(0);
+  const [newestChange, setNewestChange] = useState(0);
   const previewRef = useRef<HTMLDivElement>(null);
+  const importFlow = useImportPreview();
+  const [lastBackupAt] = useSetting("lastBackupAt", "0");
 
   // The bundle is read out of the database, tombstones included, so a line
   // deleted on one phone stays deleted on the next. The row count includes the
@@ -58,22 +68,32 @@ export function Share({ lines, pins, events, repairLogs, placeLabels }: SharePro
     const json = await exportFmapBundle();
     setBundleJson(json);
     const parsed = JSON.parse(json) as {
-      lines?: unknown[];
-      pins?: unknown[];
-      events?: unknown[];
-      repairLogs?: unknown[];
-      placeLabels?: unknown[];
+      lines?: Array<{ updatedAt?: number }>;
+      pins?: Array<{ updatedAt?: number }>;
+      events?: Array<{ updatedAt?: number }>;
+      repairLogs?: Array<{ updatedAt?: number }>;
+      placeLabels?: Array<{ updatedAt?: number }>;
     };
-    setBundleRows(
-      (parsed.lines?.length ?? 0) +
-        (parsed.pins?.length ?? 0) +
-        (parsed.events?.length ?? 0) +
-        (parsed.repairLogs?.length ?? 0) +
-        (parsed.placeLabels?.length ?? 0),
-    );
+    const rows = [
+      ...(parsed.lines ?? []),
+      ...(parsed.pins ?? []),
+      ...(parsed.events ?? []),
+      ...(parsed.repairLogs ?? []),
+      ...(parsed.placeLabels ?? []),
+    ];
+    setBundleRows(rows.length);
+    setNewestChange(rows.reduce((newest, row) => Math.max(newest, row.updatedAt ?? 0), 0));
   }, []);
 
   const hasData = bundleRows > 0;
+
+  // A nudge, never a dialog: there is work on the phone that no backup file
+  // has picked up yet.
+  const lastBackup = Number(lastBackupAt) || 0;
+  const daysSinceBackup = lastBackup
+    ? Math.floor((Date.now() - lastBackup) / 86_400_000)
+    : Infinity;
+  const needsBackup = daysSinceBackup >= 7 && newestChange > lastBackup;
 
   useEffect(() => {
     void refreshBundle();
@@ -107,24 +127,20 @@ export function Share({ lines, pins, events, repairLogs, placeLabels }: SharePro
    * the tech has seen the counts and said yes.
    */
   const prepareImport = async (text: string, fromFrames: boolean) => {
-    try {
-      const next = await planBundleImport(text);
-      setPlan(next);
+    const ok = await importFlow.prepare(text);
+    if (ok) {
       setImportStatus(null);
       setFrameStatus(null);
-    } catch (err) {
-      setPlan(null);
-      const message = (err as Error).message;
-      if (fromFrames) setFrameStatus(`Frames rejected: ${message}`);
-      else setImportStatus(`Import refused: ${message}`);
+      return;
     }
+    const message = importFlow.error ?? "the bundle was refused";
+    if (fromFrames) setFrameStatus(`Frames rejected: ${message}`);
+    else setImportStatus(`Import refused: ${message}`);
   };
 
   const confirmImport = async () => {
-    if (!plan) return;
-    const totals = plan.preview.totals;
-    await applyBundleImport(plan);
-    setPlan(null);
+    const totals = await importFlow.apply();
+    if (!totals) return;
     setImportText("");
     setFrameText("");
     setImportStatus(
@@ -168,6 +184,23 @@ export function Share({ lines, pins, events, repairLogs, placeLabels }: SharePro
   return (
     <div className="scroll" style={{ padding: 14 }}>
       <div className="stack">
+        {needsBackup && (
+          <div className="card">
+            <div className="row between" style={{ marginBottom: 6 }}>
+              <strong style={{ fontSize: 13 }}>Not backed up for a while</strong>
+              <span className="tag planned">
+                {lastBackup ? `${daysSinceBackup} days` : "Never"}
+              </span>
+            </div>
+            <p className="small muted" style={{ margin: "0 0 8px" }}>
+              There is work on this phone that no backup file has picked up yet.
+            </p>
+            <button className="btn" onClick={onOpenSettings}>
+              Save a backup
+            </button>
+          </div>
+        )}
+
         <div className="card">
           <strong>Export</strong>
           <p className="small muted" style={{ margin: "4px 0 12px" }}>
@@ -320,11 +353,11 @@ export function Share({ lines, pins, events, repairLogs, placeLabels }: SharePro
         </div>
       </div>
 
-      {plan && (
+      {importFlow.plan && (
         <ImportPreviewSheet
-          preview={plan.preview}
+          preview={importFlow.plan.preview}
           onImport={() => void confirmImport()}
-          onCancel={() => setPlan(null)}
+          onCancel={importFlow.cancel}
         />
       )}
 
