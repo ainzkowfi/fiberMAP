@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import maplibregl, { type Map as MapLibreMap } from "maplibre-gl";
+import {
+  Map as MapLibreMapClass,
+  Marker,
+  Popup,
+  type GeoJSONSource,
+  type Map as MapLibreMap,
+  type MapLayerMouseEvent,
+} from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { MUNICIPALITIES } from "../data/reference";
 import { getFiberColor } from "../data/reference";
@@ -14,7 +21,7 @@ import {
   pmtilesStyleLayers,
   type MapTheme,
 } from "./mapStyle";
-import { addPmTilesSource } from "./pmtilesLoader";
+import { addPmTilesSource, ensurePmTilesProtocol } from "./pmtilesLoader";
 import { LineBubble, type LineBubbleData } from "./LineBubble";
 import { useEscape } from "./useEscape";
 
@@ -124,7 +131,7 @@ export function MapView({
     lngLat: [number, number];
   } | null>(null);
   const bubbleRef = useRef<{
-    popup: maplibregl.Popup;
+    popup: Popup;
     root: ReturnType<typeof createRoot>;
   } | null>(null);
   const bubblesRef = useRef(lineBubbles);
@@ -169,7 +176,11 @@ export function MapView({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    const map = new maplibregl.Map({
+    // The PMTiles protocol has to exist before the map is created, so the
+    // archive can be served the moment the style asks for it.
+    ensurePmTilesProtocol();
+
+    const map = new MapLibreMapClass({
       container: containerRef.current,
       style: OFFLINE_STYLE as never,
       center: [125.9772, 8.5085],
@@ -299,7 +310,7 @@ export function MapView({
         el.className = "map-label";
         el.textContent = m.name;
         if (m.isCapitalOrHub) el.classList.add("hub");
-        new maplibregl.Marker({ element: el, anchor: "left", offset: [8, -4] })
+        new Marker({ element: el, anchor: "left", offset: [8, -4] })
           .setLngLat([m.point.lon, m.point.lat])
           .addTo(map);
       }
@@ -339,7 +350,7 @@ export function MapView({
     containerRef.current.addEventListener("mouseup", cancelPress);
     containerRef.current.addEventListener("mouseleave", cancelPress);
 
-    const onClick = (e: maplibregl.MapMouseEvent) => {
+    const onClick = (e: MapLayerMouseEvent) => {
       const map = mapRef.current;
       if (!map) return;
       // Putting a name down wins over everything else while it is armed.
@@ -420,7 +431,7 @@ export function MapView({
         }}
       />,
     );
-    const popup = new maplibregl.Popup({
+    const popup = new Popup({
       closeButton: false,
       closeOnClick: false,
       offset: 18,
@@ -452,7 +463,7 @@ export function MapView({
   // and sitios the crew works in. MapLibre cannot draw text without a glyph
   // server, which would break offline use, so the names are read out of the
   // tiles and drawn as DOM markers, the same way the municipality names are.
-  const osmMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const osmMarkersRef = useRef<Marker[]>([]);
 
   const refreshOsmNames = useCallback(() => {
     const map = mapRef.current;
@@ -499,7 +510,7 @@ export function MapView({
       el.className = "map-label place";
       el.textContent = place.name;
       osmMarkersRef.current.push(
-        new maplibregl.Marker({ element: el, anchor: "top", offset: [0, 4] })
+        new Marker({ element: el, anchor: "top", offset: [0, 4] })
           .setLngLat([place.lon, place.lat])
           .addTo(map),
       );
@@ -508,7 +519,7 @@ export function MapView({
 
   // The names the crew put on the map themselves. They are buttons, because
   // a name the crew wrote has to be editable.
-  const placeMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const placeMarkersRef = useRef<Map<string, Marker>>(new Map());
 
   useEffect(() => {
     const map = mapRef.current;
@@ -525,7 +536,7 @@ export function MapView({
           e.stopPropagation();
           handlers.current.onPlaceLabelClick(label.id);
         });
-        marker = new maplibregl.Marker({ element: el, anchor: "top", offset: [0, 10] })
+        marker = new Marker({ element: el, anchor: "top", offset: [0, 10] })
           .setLngLat([label.lon, label.lat])
           .addTo(map);
         placeMarkersRef.current.set(label.id, marker);
@@ -614,7 +625,7 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const src = map.getSource(SRC_LINES) as maplibregl.GeoJSONSource | undefined;
+    const src = map.getSource(SRC_LINES) as GeoJSONSource | undefined;
     if (!src) return;
     src.setData(
       featureCollection(
@@ -635,7 +646,7 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const src = map.getSource(SRC_PINS) as maplibregl.GeoJSONSource | undefined;
+    const src = map.getSource(SRC_PINS) as GeoJSONSource | undefined;
     if (!src) return;
     src.setData(
       featureCollection(
@@ -655,7 +666,7 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const src = map.getSource(SRC_DRAW) as maplibregl.GeoJSONSource | undefined;
+    const src = map.getSource(SRC_DRAW) as GeoJSONSource | undefined;
     if (!src) return;
     src.setData(
       featureCollection(
@@ -671,7 +682,7 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const src = map.getSource(SRC_OTDR) as maplibregl.GeoJSONSource | undefined;
+    const src = map.getSource(SRC_OTDR) as GeoJSONSource | undefined;
     if (!src) return;
     src.setData(
       featureCollection(
@@ -689,7 +700,7 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const src = map.getSource(SRC_ME) as maplibregl.GeoJSONSource | undefined;
+    const src = map.getSource(SRC_ME) as GeoJSONSource | undefined;
     if (!src) return;
     src.setData(
       featureCollection(

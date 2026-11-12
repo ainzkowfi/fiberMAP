@@ -66,7 +66,17 @@ export const BACKGROUND_EXPRESSION: Record<MapTheme, unknown[]> = {
  * Layer id, paint property, and the colour key it takes from MAP_COLORS.
  * Used to build the layers and to repaint them when the theme changes.
  */
-export const THEME_PAINT: Array<[string, string, string]> = [
+/**
+ * The paint properties the theme repaints. The names are spelled out rather
+ * than typed as plain strings so the map library can check them.
+ */
+type ThemePaintName =
+  | "circle-color"
+  | "circle-stroke-color"
+  | "fill-color"
+  | "line-color";
+
+export const THEME_PAINT: Array<[string, ThemePaintName, string]> = [
   ["ref-muni", "circle-color", "muni"],
   ["fib-line-casing", "line-color", "casing"],
   ["otdr-band", "line-color", "otdr"],

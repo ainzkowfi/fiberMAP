@@ -1,9 +1,17 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
+import { setWorkerUrl } from "maplibre-gl";
+// MapLibre v6 ships as ES modules only and loads its map worker as a real
+// URL. Under a bundler that URL does not resolve on its own, so the worker has
+// to be handed over explicitly. Without it the worker fails to load and the
+// map comes up blank, because the worker is what fetches the vector tiles.
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import App from "./App";
 import { ErrorBoundary } from "./ui/ErrorBoundary";
 import "./theme.css";
+
+setWorkerUrl(maplibreWorkerUrl);
 
 registerSW({ immediate: true });
 

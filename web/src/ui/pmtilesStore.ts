@@ -1,7 +1,7 @@
 import { PMTiles } from "pmtiles";
 import type { RangeResponse } from "pmtiles";
 import { db } from "../data/db";
-import { registerArchive, type ArchiveInfo } from "./pmtilesLoader";
+import { registerPmTilesArchive, type ArchiveInfo } from "./pmtilesLoader";
 import { readBlobWithProgress, type DownloadProgress } from "../core/download";
 
 export type { DownloadProgress };
@@ -151,7 +151,7 @@ async function mountBlob(id: string, blob: Blob): Promise<ArchiveInfo> {
     sizeBytes: blob.size,
   };
 
-  registerArchive(key, archive, info);
+  registerPmTilesArchive(key, archive);
   return info;
 }
 
