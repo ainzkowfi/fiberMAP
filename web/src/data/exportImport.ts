@@ -118,6 +118,12 @@ export interface BundleRepairLog {
 // --- Export ---
 
 /**
+ * Six decimals is about eleven centimetres. More than that is the noise the
+ * GPS adds, and a bundle full of it is a bundle full of nothing.
+ */
+const round6 = (value: number) => Math.round(value * 1e6) / 1e6;
+
+/**
  * Builds a bundle from the stored rows, tombstones included.
  *
  * The rows come straight out of the database rather than from the live
@@ -160,7 +166,7 @@ export function buildBundleJson(
       lengthMapM: line.lengthMapM,
       slackPercent: line.slackPercent,
       vertices: decodeGeometryFromBlob(line.geometry).map(
-        (v) => [v.lat, v.lon] as [number, number],
+        (v) => [round6(v.lat), round6(v.lon)] as [number, number],
       ),
       measuredLengthM: line.measuredLengthM,
       parentLineId: line.parentLineId,
@@ -173,8 +179,8 @@ export function buildBundleJson(
       id: pin.id,
       lineId: pin.lineId ?? "",
       type: pin.type,
-      lat: pin.lat,
-      lon: pin.lon,
+      lat: round6(pin.lat),
+      lon: round6(pin.lon),
       chainageM: pin.chainageM ?? -1,
       label: pin.label,
       notes: pin.notes,
@@ -221,8 +227,8 @@ export function buildBundleJson(
     placeLabels: rows.placeLabels.map((label) => ({
       id: label.id,
       name: label.name,
-      lat: label.lat,
-      lon: label.lon,
+      lat: round6(label.lat),
+      lon: round6(label.lon),
       createdAt: label.createdAt,
       updatedAt: label.updatedAt,
       deletedAt: label.deletedAt,

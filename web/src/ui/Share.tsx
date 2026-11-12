@@ -6,11 +6,19 @@ import {
   generateGeoJson,
   generateKml,
 } from "../data/exportImport";
-import { chunkPayload, frameToDataUrl, reassembleFrames, type QrFrame } from "../core/qr";
+import {
+  chunkPayload,
+  frameToDataUrl,
+  parseFrameEnvelope,
+  reassembleFrames,
+  type FrameEnvelope,
+  type QrFrame,
+} from "../core/qr";
 import { useSetting } from "../data/hooks";
 import { useEscape } from "./useEscape";
 import { useDialog } from "./useDialog";
 import { ImportPreviewSheet } from "./ImportPreviewSheet";
+import { ScanScreen } from "./ScanScreen";
 import { useImportPreview } from "./useImportPreview";
 
 export interface ShareProps {
@@ -56,6 +64,7 @@ export function Share({
   const [bundleJson, setBundleJson] = useState("");
   const [bundleRows, setBundleRows] = useState(0);
   const [newestChange, setNewestChange] = useState(0);
+  const [scanOpen, setScanOpen] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
   const importFlow = useImportPreview();
   const [lastBackupAt] = useSetting("lastBackupAt", "0");
@@ -103,8 +112,20 @@ export function Share({
   useDialog(previewRef, preview !== null);
 
   useEffect(() => {
-    setFrames(hasData && bundleJson ? chunkPayload(bundleJson) : []);
-    setFrameIndex(0);
+    let alive = true;
+    if (!hasData || !bundleJson) {
+      setFrames([]);
+      setFrameIndex(0);
+      return;
+    }
+    void chunkPayload(bundleJson).then((next) => {
+      if (!alive) return;
+      setFrames(next);
+      setFrameIndex(0);
+    });
+    return () => {
+      alive = false;
+    };
   }, [bundleJson, hasData]);
 
   useEffect(() => {
@@ -161,16 +182,13 @@ export function Share({
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean)
-        .map((line) => JSON.parse(line) as { t: string; i: number; n: number; c: number; p: string });
-      const result = reassembleFrames(
-        envelopes.map((f) => ({
-          transferId: f.t,
-          index: f.i,
-          totalCount: f.n,
-          crc32: f.c,
-          payload: f.p,
-        })),
-      );
+        .map((line) => parseFrameEnvelope(line))
+        .filter((frame): frame is FrameEnvelope => frame !== null);
+      if (envelopes.length === 0) {
+        setFrameStatus("Those lines are not fiberMAP frames.");
+        return;
+      }
+      const result = await reassembleFrames(envelopes);
       if (!result.ok) {
         setFrameStatus(`Frames rejected: ${result.error}`);
         return;
@@ -294,6 +312,13 @@ export function Share({
                 Next ›
               </button>
             </div>
+            <button
+              className="btn block"
+              style={{ marginTop: 8 }}
+              onClick={() => setScanOpen(true)}
+            >
+              Scan frames from another phone
+            </button>
           </div>
         </div>
 
@@ -353,8 +378,17 @@ export function Share({
         </div>
       </div>
 
-      {importFlow.plan && (
-        <ImportPreviewSheet
+      {scanOpen && (
+        <ScanScreen
+          onCancel={() => setScanOpen(false)}
+          onComplete={(payload) => {
+            setScanOpen(false);
+            void prepareImport(payload, false);
+          }}
+        />
+      )}
+
+      {importFlow.plan && (        <ImportPreviewSheet
           preview={importFlow.plan.preview}
           onImport={() => void confirmImport()}
           onCancel={importFlow.cancel}

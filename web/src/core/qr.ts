@@ -6,6 +6,18 @@ export interface QrFrame {
   transferId: string;
   payload: string;
   crc32: number;
+  /** The payload is deflate-compressed and base64url encoded. */
+  compressed: boolean;
+}
+
+/** What a scanned frame carries once its envelope has been read. */
+export interface FrameEnvelope {
+  transferId: string;
+  index: number;
+  totalCount: number;
+  crc32: number;
+  payload: string;
+  compressed: boolean;
 }
 
 /** CRC-32 (IEEE) over UTF-8 bytes. */
@@ -22,19 +34,53 @@ export function crc32(text: string): number {
 }
 
 /**
- * Splits a payload into QR-sized frames. The Android app used 180-char chunks
- * because it drew its own matrix; a real QR code holds ~2.9 KB at version 40-L,
- * so we use much larger frames to cut the number of screens a tech must scan.
+ * Deflates the payload and encodes it as base64url.
+ *
+ * A bundle is mostly JSON, which squashes well. The frames the crew has to
+ * scan drop from a handful to one or two, and the QR stays readable in bad
+ * light because there is less of it.
  */
-export function chunkPayload(fullText: string, chunkSize = 1200): QrFrame[] {
+export async function compressPayload(text: string): Promise<string> {
+  const stream = new Blob([text])
+    .stream()
+    .pipeThrough(new CompressionStream("deflate"));
+  const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** Undoes compressPayload. */
+export async function decompressPayload(data: string): Promise<string> {
+  const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  const stream = new Blob([bytes])
+    .stream()
+    .pipeThrough(new DecompressionStream("deflate"));
+  return new Response(stream).text();
+}
+
+/**
+ * Splits a payload into QR-sized frames.
+ *
+ * The whole payload is compressed first and the compressed text is what gets
+ * split, so the checksum on each frame covers what the scanner actually read.
+ */
+export async function chunkPayload(
+  fullText: string,
+  chunkSize = 1200,
+): Promise<QrFrame[]> {
   const transferId = Math.abs(hashString(fullText))
     .toString(16)
     .slice(-6)
     .toUpperCase()
     .padStart(6, "0");
+  const compressed = await compressPayload(fullText);
   const chunks: string[] = [];
-  for (let i = 0; i < fullText.length; i += chunkSize) {
-    chunks.push(fullText.slice(i, i + chunkSize));
+  for (let i = 0; i < compressed.length; i += chunkSize) {
+    chunks.push(compressed.slice(i, i + chunkSize));
   }
   const total = Math.max(1, chunks.length);
 
@@ -44,6 +90,7 @@ export function chunkPayload(fullText: string, chunkSize = 1200): QrFrame[] {
     transferId,
     payload: chunk,
     crc32: crc32(chunk),
+    compressed: true,
   }));
 }
 
@@ -67,6 +114,9 @@ export async function frameToDataUrl(frame: QrFrame): Promise<string> {
     n: frame.totalCount,
     c: frame.crc32,
     p: frame.payload,
+    // z marks the payload as deflate-compressed. Frames without it are the
+    // older plain ones, which are still read.
+    ...(frame.compressed ? { z: 1 } : {}),
   });
   return QRCode.toDataURL(envelope, {
     errorCorrectionLevel: "L",
@@ -76,34 +126,77 @@ export async function frameToDataUrl(frame: QrFrame): Promise<string> {
   });
 }
 
-/** Reassembles frames received out of order and validates the checksums. */
-export function reassembleFrames(
-  frames: Array<{
-    transferId: string;
-    index: number;
-    totalCount: number;
-    crc32: number;
-    payload: string;
-  }>,
-): { ok: boolean; payload: string; error?: string } {
+/**
+ * Reads a scanned frame. Returns null for anything that is not a fiberMAP
+ * frame, so a QR code of something else in the room is ignored rather than
+ * breaking the transfer.
+ */
+export function parseFrameEnvelope(text: string): FrameEnvelope | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const raw = parsed as Record<string, unknown>;
+  if (typeof raw.t !== "string" || typeof raw.p !== "string") return null;
+  if (typeof raw.i !== "number" || typeof raw.n !== "number") return null;
+  if (typeof raw.c !== "number") return null;
+  return {
+    transferId: raw.t,
+    index: raw.i,
+    totalCount: raw.n,
+    crc32: raw.c,
+    payload: raw.p,
+    compressed: raw.z === 1,
+  };
+}
+
+export interface Reassembled {
+  ok: boolean;
+  payload: string;
+  error?: string;
+}
+
+/**
+ * Reassembles frames received in any order, with duplicates, and validates
+ * every checksum before the payload is handed on.
+ */
+export async function reassembleFrames(frames: FrameEnvelope[]): Promise<Reassembled> {
   if (frames.length === 0) return { ok: false, payload: "", error: "No frames" };
   const transferId = frames[0].transferId;
   const totalCount = frames[0].totalCount;
-  const same = frames.filter(
-    (f) => f.transferId === transferId && f.totalCount === totalCount,
-  );
-  if (same.length !== totalCount) {
+
+  // The same frame can be scanned twice. Keep the first copy of each index.
+  const byIndex = new Map<number, FrameEnvelope>();
+  for (const frame of frames) {
+    if (frame.transferId !== transferId || frame.totalCount !== totalCount) continue;
+    if (!byIndex.has(frame.index)) byIndex.set(frame.index, frame);
+  }
+
+  if (byIndex.size !== totalCount) {
     return {
       ok: false,
       payload: "",
-      error: `Expected ${totalCount} frames, got ${same.length}`,
+      error: `Expected ${totalCount} frames, got ${byIndex.size}`,
     };
   }
-  same.sort((a, b) => a.index - b.index);
-  for (const f of same) {
-    if (crc32(f.payload) !== f.crc32) {
-      return { ok: false, payload: "", error: `CRC mismatch on frame ${f.index}` };
+
+  const ordered = [...byIndex.values()].sort((a, b) => a.index - b.index);
+  for (const frame of ordered) {
+    if (crc32(frame.payload) !== frame.crc32) {
+      return { ok: false, payload: "", error: `CRC mismatch on frame ${frame.index}` };
     }
   }
-  return { ok: true, payload: same.map((f) => f.payload).join("") };
+
+  const joined = ordered.map((frame) => frame.payload).join("");
+  if (!ordered[0].compressed) {
+    return { ok: true, payload: joined };
+  }
+  try {
+    return { ok: true, payload: await decompressPayload(joined) };
+  } catch {
+    return { ok: false, payload: "", error: "The frames could not be unpacked" };
+  }
 }
