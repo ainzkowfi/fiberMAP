@@ -8,6 +8,7 @@ import {
 } from "../core/geometry";
 import { useEscape } from "./useEscape";
 import { useDialog } from "./useDialog";
+import { useSetting } from "../data/hooks";
 
 export interface OtdrDialogProps {
   line: FiberLine;
@@ -30,7 +31,8 @@ export function OtdrDialog({
 }: OtdrDialogProps) {
   const [input, setInput] = useState("");
   const [fromEnd, setFromEnd] = useState(false);
-  const [offset, setOffset] = useState("");
+  // The launch cable is the same on every job, so the last one is kept.
+  const [offset, setOffset] = useSetting("otdrOffset", "0");
   const sheetRef = useRef<HTMLDivElement>(null);
 
   const otdrM = parseFloat(input) || 0;
@@ -122,7 +124,7 @@ export function OtdrDialog({
             <label htmlFor="otdr-offset">Launch cable / pigtail offset (m)</label>
             <input
               id="otdr-offset"
-              inputMode="numeric"
+              inputMode="decimal"
               value={offset}
               onChange={(e) => setOffset(e.target.value)}
               placeholder="0"
