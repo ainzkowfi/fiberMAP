@@ -159,6 +159,76 @@ export interface Reassembled {
   error?: string;
 }
 
+export interface Collected {
+  /** The collection was thrown away because a different transfer showed up. */
+  restarted: boolean;
+  transferId: string;
+  /** How many frames of this transfer are in hand. */
+  count: number;
+  /** How many frames the transfer has. */
+  expected: number;
+}
+
+/**
+ * Gathers scanned frames.
+ *
+ * The frames of one transfer are kept by their number, so they can arrive in
+ * any order and the same frame can be scanned twice without counting twice. A
+ * frame from another transfer means the crew started a different transfer, so
+ * the first one is dropped rather than mixed up with the second.
+ */
+export class FrameCollector {
+  private transferId: string | null = null;
+  private byIndex = new Map<number, FrameEnvelope>();
+  private expected = 0;
+
+  add(frame: FrameEnvelope): Collected {
+    let restarted = false;
+    if (this.transferId !== null && frame.transferId !== this.transferId) {
+      this.reset();
+      restarted = true;
+    }
+    this.transferId = frame.transferId;
+    this.expected = frame.totalCount;
+    if (!this.byIndex.has(frame.index)) this.byIndex.set(frame.index, frame);
+    return {
+      restarted,
+      transferId: frame.transferId,
+      count: this.byIndex.size,
+      expected: this.expected,
+    };
+  }
+
+  /** Throws the collection away and starts over. */
+  reset(): void {
+    this.transferId = null;
+    this.byIndex.clear();
+    this.expected = 0;
+  }
+
+  get transfer(): string | null {
+    return this.transferId;
+  }
+
+  get count(): number {
+    return this.byIndex.size;
+  }
+
+  get total(): number {
+    return this.expected;
+  }
+
+  /** True when every frame of the transfer is in hand. */
+  get complete(): boolean {
+    return this.expected > 0 && this.byIndex.size >= this.expected;
+  }
+
+  /** The frames of the current transfer, in order. */
+  frames(): FrameEnvelope[] {
+    return [...this.byIndex.values()].sort((a, b) => a.index - b.index);
+  }
+}
+
 /**
  * Reassembles frames received in any order, with duplicates, and validates
  * every checksum before the payload is handed on.

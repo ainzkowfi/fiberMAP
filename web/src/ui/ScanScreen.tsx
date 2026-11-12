@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  FrameCollector,
   parseFrameEnvelope,
   reassembleFrames,
-  type FrameEnvelope,
 } from "../core/qr";
 
 export interface ScanScreenProps {
@@ -16,15 +16,15 @@ export interface ScanScreenProps {
  *
  * The frames can arrive in any order and the same frame can be scanned twice,
  * so they are collected by their number and the transfer only finishes when
- * every one of them is in and every checksum matches.
+ * every one of them is in and every checksum matches. A frame from another
+ * transfer starts the collection over, because two transfers cannot be mixed.
  */
 export function ScanScreen({ onComplete, onCancel }: ScanScreenProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [frames, setFrames] = useState<Map<number, FrameEnvelope>>(new Map());
+  const collectorRef = useRef(new FrameCollector());
+  const [progress, setProgress] = useState({ count: 0, expected: 0 });
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-
-  const total = frames.values().next().value?.totalCount ?? 0;
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -106,12 +106,13 @@ export function ScanScreen({ onComplete, onCancel }: ScanScreenProps) {
           if (text) {
             const envelope = parseFrameEnvelope(text);
             if (envelope) {
-              setFrames((current) => {
-                if (current.has(envelope.index)) return current;
-                const next = new Map(current);
-                next.set(envelope.index, envelope);
-                return next;
-              });
+              const result = collectorRef.current.add(envelope);
+              setProgress({ count: result.count, expected: result.expected });
+              if (result.restarted) {
+                setNote(
+                  "Another transfer started, so the frames of the first one were dropped.",
+                );
+              }
             } else {
               setNote("That code is not a fiberMAP frame.");
             }
@@ -131,9 +132,10 @@ export function ScanScreen({ onComplete, onCancel }: ScanScreenProps) {
   }, []);
 
   useEffect(() => {
-    if (!total || frames.size < total) return;
+    const collector = collectorRef.current;
+    if (!collector.complete) return;
     let alive = true;
-    void reassembleFrames([...frames.values()]).then((result) => {
+    void reassembleFrames(collector.frames()).then((result) => {
       if (!alive) return;
       if (!result.ok) {
         setError(result.error ?? "The frames did not add up.");
@@ -144,7 +146,7 @@ export function ScanScreen({ onComplete, onCancel }: ScanScreenProps) {
     return () => {
       alive = false;
     };
-  }, [frames, total, onComplete]);
+  }, [progress, onComplete]);
 
   return (
     <div
@@ -187,19 +189,35 @@ export function ScanScreen({ onComplete, onCancel }: ScanScreenProps) {
       >
         <div className="grow">
           <strong style={{ fontSize: 15 }}>
-            {total ? `Frame ${frames.size} of ${total}` : "Looking for a frame"}
+            {progress.expected
+              ? `Frame ${progress.count} of ${progress.expected}`
+              : "Looking for a frame"}
           </strong>
           <div className="small" style={{ opacity: 0.75 }}>
             {error ?? note ?? "Point the camera at the QR code on the other phone."}
           </div>
         </div>
-        <button
-          className="btn ghost"
-          onClick={onCancel}
-          style={{ background: "rgba(238,241,243,.14)", color: "#eef1f3" }}
-        >
-          Cancel
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button
+            className="btn ghost"
+            onClick={() => {
+              collectorRef.current.reset();
+              setProgress({ count: 0, expected: 0 });
+              setNote("Cleared. Scan the frames again.");
+              setError(null);
+            }}
+            style={{ background: "rgba(238,241,243,.14)", color: "#eef1f3" }}
+          >
+            Reset
+          </button>
+          <button
+            className="btn ghost"
+            onClick={onCancel}
+            style={{ background: "rgba(238,241,243,.14)", color: "#eef1f3" }}
+          >
+            Cancel
+          </button>
+        </div>
       </div>
 
       <div

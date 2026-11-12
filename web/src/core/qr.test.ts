@@ -4,6 +4,7 @@ import {
   compressPayload,
   crc32,
   decompressPayload,
+  FrameCollector,
   parseFrameEnvelope,
   reassembleFrames,
   type FrameEnvelope,
@@ -106,5 +107,86 @@ describe("qr transfer", () => {
     const result = await reassembleFrames([frame]);
     expect(result.ok).toBe(true);
     expect(result.payload).toBe(plain);
+  });
+});
+
+describe("collecting frames", () => {
+  const frame = (
+    transferId: string,
+    index: number,
+    totalCount: number,
+  ): FrameEnvelope => {
+    const payload = `${transferId}-${index}`;
+    return {
+      transferId,
+      index,
+      totalCount,
+      crc32: crc32(payload),
+      payload,
+      compressed: false,
+    };
+  };
+
+  it("keeps the frames of one transfer in any order", () => {
+    const collector = new FrameCollector();
+    collector.add(frame("AAA111", 2, 3));
+    collector.add(frame("AAA111", 1, 3));
+    expect(collector.count).toBe(2);
+    expect(collector.total).toBe(3);
+    expect(collector.complete).toBe(false);
+    collector.add(frame("AAA111", 3, 3));
+    expect(collector.complete).toBe(true);
+    expect(collector.frames().map((f) => f.index)).toEqual([1, 2, 3]);
+  });
+
+  it("counts a frame that is scanned twice only once", () => {
+    const collector = new FrameCollector();
+    collector.add(frame("AAA111", 1, 2));
+    collector.add(frame("AAA111", 1, 2));
+    expect(collector.count).toBe(1);
+  });
+
+  it("starts over when another transfer shows up", () => {
+    const collector = new FrameCollector();
+    collector.add(frame("AAA111", 1, 3));
+    collector.add(frame("AAA111", 2, 3));
+    expect(collector.count).toBe(2);
+
+    const result = collector.add(frame("BBB222", 1, 2));
+    expect(result.restarted).toBe(true);
+    expect(collector.transfer).toBe("BBB222");
+    expect(collector.count).toBe(1);
+    expect(collector.total).toBe(2);
+    expect(collector.frames()[0].payload).toBe("BBB222-1");
+  });
+
+  it("forgets everything on a reset", () => {
+    const collector = new FrameCollector();
+    collector.add(frame("AAA111", 1, 2));
+    collector.reset();
+    expect(collector.count).toBe(0);
+    expect(collector.transfer).toBeNull();
+    expect(collector.complete).toBe(false);
+  });
+
+  it("keeps only the frames of the transfer that is in hand", () => {
+    const collector = new FrameCollector();
+    collector.add(frame("AAA111", 1, 2));
+    collector.add(frame("BBB222", 1, 2));
+    collector.add(frame("AAA111", 2, 2));
+
+    expect(collector.transfer).toBe("AAA111");
+    expect(collector.count).toBe(1);
+    expect(collector.frames()[0].payload).toBe("AAA111-2");
+  });
+
+  it("reassembles a complete transfer that was scanned out of order", async () => {
+    const collector = new FrameCollector();
+    collector.add(frame("AAA111", 2, 2));
+    collector.add(frame("AAA111", 1, 2));
+
+    const result = await reassembleFrames(collector.frames());
+    expect(result.ok).toBe(true);
+    expect(result.payload).toBe("AAA111-1AAA111-2");
   });
 });
