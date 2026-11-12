@@ -374,6 +374,8 @@ export interface ImportCounts {
   restored: number;
   /** A child taken down because the parent under it is deleted. */
   orphaned: number;
+  /** Rows that are deleted after the merge, so the crew can see what stays gone. */
+  stillDeleted: number;
 }
 
 export interface ImportPreview {
@@ -825,6 +827,7 @@ const emptyCounts = (): ImportCounts => ({
   deleted: 0,
   restored: 0,
   orphaned: 0,
+  stillDeleted: 0,
 });
 
 interface MergedRow {
@@ -897,7 +900,8 @@ function reconcile<T extends MergedRow, P extends MergedRow>(
   childCounts: ImportCounts,
   parentCounts: ImportCounts,
   now: number,
-): void {
+): number {
+  let changes = 0;
   for (const child of children) {
     if (child.deletedAt !== null) continue;
     const parent = resolveParent(child);
@@ -907,13 +911,16 @@ function reconcile<T extends MergedRow, P extends MergedRow>(
       parent.updatedAt = child.updatedAt;
       onParentRestore(parent);
       parentCounts.restored++;
+      changes++;
     } else {
       child.deletedAt = now;
       child.updatedAt = now;
       onChildWrite(child);
       childCounts.orphaned++;
+      changes++;
     }
   }
+  return changes;
 }
 
 /**
@@ -982,48 +989,84 @@ export async function planBundleImport(json: string): Promise<BundleImportPlan> 
     json,
   };
 
-  // A pin under a deleted line.
-  reconcile(
-    [...state.pins.values()],
-    (pin) => (pin.lineId ? state.lines.get(pin.lineId) : null),
-    (gone) => upsert(plan.pins, gone),
-    (restored) => upsert(plan.lines, restored),
-    counts.pins,
-    counts.lines,
-    now,
-  );
+  // Walk the tree top-down (lines, pins, events, repair logs) and then back up
+  // again, until nothing changes. A row restored at one level can restore its
+  // own parent at the level above, or be orphaned if it is not newer than the
+  // parent's deletion. Re-running the passes is what carries a restore up the
+  // chain instead of leaving a restored child under a still-deleted parent.
+  let changed = true;
+  while (changed) {
+    changed = false;
 
-  // An event under a deleted pin.
-  reconcile(
-    [...state.events.values()],
-    (event) => state.pins.get(event.pinId),
-    (gone) => upsert(plan.pinEvents, gone),
-    (restored) => upsert(plan.pins, restored),
-    counts.events,
-    counts.pins,
-    now,
-  );
+    if (
+      reconcile(
+        [...state.pins.values()],
+        (pin) => (pin.lineId ? state.lines.get(pin.lineId) : null),
+        (gone) => upsert(plan.pins, gone),
+        (restored) => upsert(plan.lines, restored),
+        counts.pins,
+        counts.lines,
+        now,
+      ) > 0
+    )
+      changed = true;
 
-  // A repair log under a deleted pin, or under a deleted line when it has no pin.
-  const logs = [...state.repairLogs.values()];
-  reconcile(
-    logs.filter((log) => log.pinId !== null),
-    (log) => (log.pinId ? state.pins.get(log.pinId) : null),
-    (gone) => upsert(plan.repairLogs, gone),
-    (restored) => upsert(plan.pins, restored),
-    counts.repairLogs,
-    counts.pins,
-    now,
-  );
-  reconcile(
-    logs.filter((log) => log.pinId === null && log.lineId !== null),
-    (log) => (log.lineId ? state.lines.get(log.lineId) : null),
-    (gone) => upsert(plan.repairLogs, gone),
-    (restored) => upsert(plan.lines, restored),
-    counts.repairLogs,
-    counts.lines,
-    now,
-  );
+    if (
+      reconcile(
+        [...state.events.values()],
+        (event) => state.pins.get(event.pinId),
+        (gone) => upsert(plan.pinEvents, gone),
+        (restored) => upsert(plan.pins, restored),
+        counts.events,
+        counts.pins,
+        now,
+      ) > 0
+    )
+      changed = true;
+
+    const logs = [...state.repairLogs.values()];
+    if (
+      reconcile(
+        logs.filter((log) => log.pinId !== null),
+        (log) => (log.pinId ? state.pins.get(log.pinId) : null),
+        (gone) => upsert(plan.repairLogs, gone),
+        (restored) => upsert(plan.pins, restored),
+        counts.repairLogs,
+        counts.pins,
+        now,
+      ) > 0
+    )
+      changed = true;
+
+    if (
+      reconcile(
+        logs.filter((log) => log.pinId === null && log.lineId !== null),
+        (log) => (log.lineId ? state.lines.get(log.lineId) : null),
+        (gone) => upsert(plan.repairLogs, gone),
+        (restored) => upsert(plan.lines, restored),
+        counts.repairLogs,
+        counts.lines,
+        now,
+      ) > 0
+    )
+      changed = true;
+  }
+
+  // What is deleted after the merge, so the crew can see what stays gone.
+  counts.lines.stillDeleted = [...state.lines.values()].filter(
+    (row) => row.deletedAt !== null,
+  ).length;
+  counts.pins.stillDeleted = [...state.pins.values()].filter(
+    (row) => row.deletedAt !== null,
+  ).length;
+  counts.events.stillDeleted = [...state.events.values()].filter(
+    (row) => row.deletedAt !== null,
+  ).length;
+  counts.repairLogs.stillDeleted = [...state.repairLogs.values()].filter(
+    (row) => row.deletedAt !== null,
+  ).length;
+  // placeLabels has no parent, so it is counted on its own.
+  counts.placeLabels.stillDeleted = counts.placeLabels.deleted;
 
   for (const table of [
     counts.lines,
@@ -1038,6 +1081,7 @@ export async function planBundleImport(json: string): Promise<BundleImportPlan> 
     counts.totals.deleted += table.deleted;
     counts.totals.restored += table.restored;
     counts.totals.orphaned += table.orphaned;
+    counts.totals.stillDeleted += table.stillDeleted;
   }
   plan.preview = { ...counts };
 

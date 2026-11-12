@@ -86,8 +86,18 @@ export function ImportPreviewSheet({
             {totals.new} new, {totals.updated} updated, {totals.skipped} left alone
             because this phone is newer, {totals.deleted} deleted
             {totals.restored > 0 && `, ${totals.restored} parents brought back`}
-            {totals.orphaned > 0 && `, ${totals.orphaned} children taken down`}.
+            {totals.orphaned > 0 && `, ${totals.orphaned} children taken down`}
+            {totals.stillDeleted > 0 &&
+              `, ${totals.stillDeleted} rows still deleted`}.
           </p>
+
+          {preview.lines.restored > 0 && preview.pins.stillDeleted > 0 && (
+            <p className="small muted" style={{ margin: "8px 0 0" }}>
+              The line is back, but {preview.pins.stillDeleted} of its pins are
+              still deleted and will not come back. Only the pins that were
+              edited after the deletion survived.
+            </p>
+          )}
         </div>
 
         <div className="sheet-foot">

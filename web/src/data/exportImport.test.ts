@@ -389,6 +389,197 @@ describe("bundle import and orphans", () => {
     expect((await db.pins.get("pin-1"))?.deletedAt).toBeNull();
   });
 
+  it("an event restores the pin and the pin's deleted line", async () => {
+    // The line was deleted, then a pin under it, then an event under the pin.
+    // The event is newer than both deletions, so the whole chain comes back.
+    await putLocalLine({ deletedAt: T0, updatedAt: T0 });
+    await putLocalPin({ deletedAt: T0, updatedAt: T0 });
+    await putLocalEvent({ updatedAt: T0 + 1000 });
+
+    const plan = await planBundleImport(
+      bundle({
+        lines: [line({ deletedAt: T0, updatedAt: T0 })],
+        pins: [
+          {
+            id: "pin-1",
+            lineId: "line-1",
+            type: "CUT_REPAIR",
+            lat: 8.05,
+            lon: 126.06,
+            chainageM: 100,
+            label: "",
+            notes: "",
+            state: "OPEN",
+            coilLengthM: 0,
+            createdAt: T0,
+            updatedAt: T0,
+            deletedAt: T0,
+          },
+        ],
+        events: [
+          {
+            id: "event-1",
+            pinId: "pin-1",
+            kind: "cut",
+            eventDate: T0 + 1000,
+            repairMethod: "",
+            note: "",
+            updatedAt: T0 + 1000,
+          },
+        ],
+      }),
+    );
+
+    expect(plan.preview.pins.restored).toBe(1);
+    expect(plan.preview.lines.restored).toBe(1);
+    expect(plan.preview.events.orphaned).toBe(0);
+
+    await applyBundleImport(plan);
+    expect((await db.lines.get("line-1"))?.deletedAt).toBeNull();
+    expect((await db.pins.get("pin-1"))?.deletedAt).toBeNull();
+    expect((await db.pinEvents.get("event-1"))?.deletedAt).toBeNull();
+  });
+
+  it("a repair log restores a pin under a deleted line", async () => {
+    await putLocalLine({ deletedAt: T0, updatedAt: T0 });
+    await putLocalPin({ deletedAt: T0, updatedAt: T0 });
+
+    const plan = await planBundleImport(
+      bundle({
+        repairLogs: [
+          {
+            id: "log-1",
+            lineId: "line-1",
+            pinId: "pin-1",
+            spliceLossDbm: 0.02,
+            fiberCutLocation: "0+100 m",
+            cutLat: 8.05,
+            cutLon: 126.06,
+            chainageM: 100,
+            repairTimestamp: T0 + 1000,
+            technicianName: "Field Tech",
+            repairMethod: "fusion",
+            closureTag: "",
+            notes: "",
+            updatedAt: T0 + 1000,
+          },
+        ],
+      }),
+    );
+
+    expect(plan.preview.pins.restored).toBe(1);
+    expect(plan.preview.lines.restored).toBe(1);
+
+    await applyBundleImport(plan);
+    expect((await db.lines.get("line-1"))?.deletedAt).toBeNull();
+    expect((await db.pins.get("pin-1"))?.deletedAt).toBeNull();
+  });
+
+  it("stays deleted when the chain is not newer enough", async () => {
+    await putLocalLine({ deletedAt: T0 + 2000, updatedAt: T0 + 2000 });
+    await putLocalPin({ deletedAt: T0 + 2000, updatedAt: T0 + 2000 });
+
+    const plan = await planBundleImport(
+      bundle({
+        events: [
+          {
+            id: "event-1",
+            pinId: "pin-1",
+            kind: "cut",
+            eventDate: T0 + 1000,
+            repairMethod: "",
+            note: "",
+            updatedAt: T0 + 1000,
+          },
+        ],
+      }),
+    );
+
+    expect(plan.preview.pins.restored).toBe(0);
+    expect(plan.preview.lines.restored).toBe(0);
+    expect(plan.preview.events.orphaned).toBe(1);
+
+    await applyBundleImport(plan);
+    expect((await db.lines.get("line-1"))?.deletedAt).not.toBeNull();
+    expect((await db.pins.get("pin-1"))?.deletedAt).not.toBeNull();
+    expect((await db.pinEvents.get("event-1"))?.deletedAt).not.toBeNull();
+  });
+
+  it("keeps a sibling pin deleted when one pin restores the line", async () => {
+    // The line and two pins were deleted together. The incoming bundle edits
+    // one of the pins afterwards, so that one is newer than the deletion.
+    await putLocalLine({ deletedAt: T0, updatedAt: T0 });
+    await db.pins.put({
+      id: "pin-a",
+      lineId: "line-1",
+      type: "cut_repair",
+      lat: 8.05,
+      lon: 126.06,
+      snapLat: 8.05,
+      snapLon: 126.06,
+      chainageM: 100,
+      gpsAccuracyM: null,
+      label: "",
+      notes: "",
+      state: "open",
+      spliceLossDbm: null,
+      coilLengthM: 0,
+      createdAt: T0,
+      updatedAt: T0,
+      deletedAt: T0,
+    });
+    await db.pins.put({
+      id: "pin-b",
+      lineId: "line-1",
+      type: "cut_repair",
+      lat: 8.06,
+      lon: 126.07,
+      snapLat: 8.06,
+      snapLon: 126.07,
+      chainageM: 200,
+      gpsAccuracyM: null,
+      label: "",
+      notes: "",
+      state: "open",
+      spliceLossDbm: null,
+      coilLengthM: 0,
+      createdAt: T0,
+      updatedAt: T0,
+      deletedAt: T0,
+    });
+
+    const plan = await planBundleImport(
+      bundle({
+        pins: [
+          {
+            id: "pin-a",
+            lineId: "line-1",
+            type: "CUT_REPAIR",
+            lat: 8.05,
+            lon: 126.06,
+            chainageM: 100,
+            label: "",
+            notes: "",
+            state: "OPEN",
+            coilLengthM: 0,
+            createdAt: T0,
+            updatedAt: T0 + 1000,
+          },
+        ],
+      }),
+    );
+
+    expect(plan.preview.lines.restored).toBe(1);
+    expect(plan.preview.pins.restored).toBe(0);
+    expect(plan.preview.pins.orphaned).toBe(0);
+    expect(plan.preview.pins.stillDeleted).toBe(1);
+
+    await applyBundleImport(plan);
+    expect((await db.lines.get("line-1"))?.deletedAt).toBeNull();
+    expect((await db.pins.get("pin-a"))?.deletedAt).toBeNull();
+    expect((await db.pins.get("pin-b"))?.deletedAt).not.toBeNull();
+  });
+
   it("keeps an edit made between the preview and the import", async () => {
     await putLocalLine({ name: "Local name", updatedAt: T0 });
     const plan = await planBundleImport(
