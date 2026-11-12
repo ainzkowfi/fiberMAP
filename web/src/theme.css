@@ -1,0 +1,909 @@
+/*
+  fiberMAP field palette.
+
+  Purpose: this is a tool used outdoors, one-handed, in direct sun. Every
+  token here is chosen for contrast and glanceability, not for softness.
+  Density beats whitespace: a tech standing at a pole needs the numbers
+  large and the chrome quiet.
+
+  Three dials: ENERGY 1 / RHYTHM 2 / MOTION 1.
+  Read as: field-operations tool for line crews, utilitarian language,
+  sun-readable palette.
+*/
+
+:root {
+  /* Neutral spine. Cool greys, slight blue cast, so the status colours
+     below never look muddy against them. */
+  --paper: #eef1f3;
+  --surface: #ffffff;
+  --surface-sunken: #e3e8ec;
+  --surface-variant: #d7dee3;
+  --ink: #0d1a20;
+  --ink-soft: #3d4d56;
+  /* Darkened from #5a6b74: the stat labels sit on --surface-variant, where
+     #5a6b74 only reached 4.08:1. This clears AA at 4.72:1 on the darkest
+     surface it is used on, and stays above 5.6:1 on paper. */
+  --muted: #51616b;
+  --border: #b9c5cc;
+  --border-strong: #7e9099;
+
+  /* Status colours. Cut red and repaired green are the two things a crew
+     scans for, so they are the most saturated things in the app. */
+  --cut: #b8231a;
+  --cut-soft: #fbe6e4;
+  --repaired: #14683c;
+  --repaired-soft: #dff0e6;
+  --planned: #7a5a12;
+  --planned-soft: #f7edd6;
+
+  /* The single accent: jacket teal, from the fibre jacket convention.
+     Used for actions and selection, never for decoration. */
+  --jacket: #075e6b;
+  --jacket-hover: #044a55;
+  --jacket-soft: #d7ebee;
+
+  --focus: #0b6fb8;
+
+  --radius: 6px;
+  --radius-sm: 4px;
+  --tap: 48px;
+  --nav-height: 64px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Elevation is used only to separate floating controls from the map.
+     Flat surfaces need no shadow. */
+  --shadow-float: 0 2px 6px rgb(13 26 32 / 22%);
+  --shadow-sheet: 0 -4px 24px rgb(13 26 32 / 24%);
+}
+
+[data-theme="dark"] {
+  --paper: #0c1418;
+  --surface: #162228;
+  --surface-sunken: #0f191d;
+  --surface-variant: #22333b;
+  --ink: #f2f6f7;
+  --ink-soft: #c3d0d6;
+  --muted: #93a4ad;
+  --border: #33474f;
+  --border-strong: #5d7580;
+
+  --cut: #ff6a5c;
+  --cut-soft: #3a1c19;
+  --repaired: #4cd08a;
+  --repaired-soft: #13301f;
+  --planned: #e0b95c;
+  --planned-soft: #33290f;
+
+  --jacket: #35c4d8;
+  --jacket-hover: #63d6e6;
+  --jacket-soft: #10353c;
+
+  --focus: #5ab4ee;
+
+  --shadow-float: 0 2px 6px rgb(0 0 0 / 50%);
+  --shadow-sheet: 0 -4px 24px rgb(0 0 0 / 55%);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Segoe UI", Roboto, system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+a,
+select,
+summary,
+label[for] {
+  cursor: pointer;
+}
+
+button:disabled,
+select:disabled,
+input:disabled {
+  cursor: not-allowed;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 11px 12px;
+  width: 100%;
+  min-height: var(--tap);
+}
+
+textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* ---------- App shell ---------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Keyboard-only escape hatch past the header and the map controls. */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 8px;
+  z-index: 100;
+  padding: 8px 12px;
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-bottom: 2px solid var(--ink);
+  flex: none;
+}
+
+.app-header h1 {
+  font-size: 16px;
+  margin: 0;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+
+.app-header .sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.app-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* The map stays mounted across tab switches so the WebGL context and the
+   decoded basemap tiles survive. Only visibility changes: the `hidden`
+   attribute would collapse the canvas to 0x0 and MapLibre would re-fit the
+   viewport, scrambling the zoom level. */
+.map-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  visibility: visible;
+}
+
+.map-layer.off {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Panels sit over the map. Opaque so the canvas never bleeds through. */
+.panel {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: var(--paper);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.app-nav {
+  display: flex;
+  flex: none;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding-bottom: var(--safe-bottom);
+}
+
+.app-nav button {
+  flex: 1;
+  min-height: var(--nav-height);
+  border: 0;
+  border-top: 3px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 4px;
+}
+
+.app-nav button[aria-current="page"] {
+  color: var(--jacket);
+  border-top-color: var(--jacket);
+}
+
+.app-nav .icon {
+  font-size: 20px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+}
+
+/* ---------- Primitives ---------- */
+
+.btn {
+  min-height: var(--tap);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 0 14px;
+  font-weight: 700;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn.primary {
+  background: var(--jacket);
+  border-color: var(--jacket);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .btn.primary {
+  color: #06181c;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--jacket-hover);
+  border-color: var(--jacket-hover);
+}
+
+.btn.danger {
+  background: var(--cut);
+  border-color: var(--cut);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .btn.danger {
+  color: #2a0906;
+}
+
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--surface-variant);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+}
+
+.btn.block {
+  width: 100%;
+}
+
+/* Panels: flat with a hard edge. Cards float on paper; panels sit on it.
+   No accent stripe on the left edge: every card carries a hard border all
+   the way round, so a one-sided bar would be decoration with nothing to say. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 13px 14px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.row.between {
+  justify-content: space-between;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 12px;
+}
+
+.scroll {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  height: 100%;
+}
+
+/* Status tags carry meaning, not decoration, so they stay square-cornered
+   with a tinted fill instead of soft pills. */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  background: var(--surface-variant);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.tag.cut {
+  background: var(--cut-soft);
+  color: var(--cut);
+}
+
+.tag.repaired {
+  background: var(--repaired-soft);
+  color: var(--repaired);
+}
+
+.tag.jacket {
+  background: var(--jacket-soft);
+  color: var(--jacket);
+}
+
+.tag.planned {
+  background: var(--planned-soft);
+  color: var(--planned);
+}
+
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  min-height: 40px;
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--jacket);
+  border-color: var(--jacket);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .chip[aria-pressed="true"] {
+  color: #06181c;
+}
+
+/* ---------- Readouts ---------- */
+
+/* The four numbers a tech reads off a line record. One row, divided by
+   hairlines, so the screen reads as a record sheet and not a dashboard of
+   tiles. */
+.figures {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.figures > div {
+  padding: 8px 4px;
+  text-align: center;
+  border-right: 1px solid var(--border);
+}
+
+.figures > div:last-child {
+  border-right: 0;
+}
+
+.figures .k {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.figures .v {
+  font-size: 16px;
+  font-weight: 800;
+  margin-top: 1px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 359px) {
+  .figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .figures > div:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .figures > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.kv:last-child {
+  border-bottom: 0;
+}
+
+.kv .muted {
+  flex: none;
+}
+
+.kv strong {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Map ---------- */
+
+.map-wrap {
+  position: absolute;
+  inset: 0;
+}
+
+/* Added by MapLibre to its container at runtime. */
+.maplibregl-map {
+  font: inherit;
+}
+
+/* The bubble that opens when a line is tapped. MapLibre's own popup is a
+   white box with a grey border; this uses the app's surfaces so it reads as
+   part of the same tool. */
+.maplibregl-popup-content {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sheet);
+}
+
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: var(--surface);
+}
+
+.bubble {
+  min-width: 168px;
+  font-size: 13px;
+}
+
+.map-hud {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 5;
+}
+
+.map-hud.right {
+  top: 10px;
+  right: 10px;
+  align-items: flex-end;
+}
+
+.map-hud.left {
+  top: 10px;
+  left: 10px;
+  align-items: flex-start;
+}
+
+.map-hud.bottom {
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.map-hud > * {
+  pointer-events: auto;
+}
+
+/* Square, high-contrast map controls. Glassy circular buttons wash out in
+   sunlight and cost contrast. */
+.fab {
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-float);
+}
+
+.fab:hover {
+  border-color: var(--ink);
+}
+
+.fab.primary {
+  background: var(--jacket);
+  border-color: var(--jacket);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .fab.primary {
+  color: #06181c;
+}
+
+.fab.danger {
+  background: var(--cut);
+  border-color: var(--cut);
+  color: #ffffff;
+}
+
+.map-readout {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
+.draw-banner {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: var(--radius);
+  padding: 9px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  max-width: calc(100% - 24px);
+  text-align: center;
+}
+
+/* Municipality names as DOM markers: MapLibre symbol layers would need a
+   glyph server, which would break offline use. */
+.map-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ink);
+  opacity: 0.8;
+  white-space: nowrap;
+  text-shadow:
+    0 0 3px var(--paper),
+    0 0 3px var(--paper),
+    0 0 2px var(--paper);
+  pointer-events: none;
+}
+
+.map-label.hub {
+  font-weight: 800;
+  opacity: 1;
+}
+
+/* Place names from the archive: quieter than the municipality names, because
+   they are the smaller places. */
+.map-label.place {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  opacity: 0.75;
+}
+
+/* A name the crew wrote. It has to stand out from the map and be tappable to
+   rename, so it is a button in the app's own colour. */
+.map-label.crew {
+  pointer-events: auto;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #ffffff;
+  background: var(--jacket);
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 2px 7px;
+  text-shadow: none;
+  white-space: nowrap;
+}
+
+.map-label.crew:hover {
+  background: var(--ink);
+}
+
+[data-theme="dark"] .map-label.crew {
+  color: #06181c;
+}
+
+/* ---------- Sheets / modals ---------- */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgb(13 26 32 / 55%);
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.sheet {
+  background: var(--surface);
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  border-radius: var(--radius) var(--radius) 0 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-sheet);
+}
+
+@media (min-width: 700px) {
+  .scrim {
+    align-items: center;
+  }
+  .sheet {
+    border-radius: var(--radius);
+    max-height: 86vh;
+  }
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 2px solid var(--ink);
+  flex: none;
+}
+
+.sheet-head h2 {
+  margin: 0;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 800;
+}
+
+.sheet-body {
+  padding: 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sheet-foot {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px calc(10px + var(--safe-bottom));
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+
+.sheet-foot .btn {
+  flex: 1;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+
+/* ---------- Lists ---------- */
+
+/* Rows carry their own colour swatch for the fibre strand. A second stripe
+   on the edge would be decoration with nothing to say. */
+.list-item {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 11px 12px;
+}
+
+.list-item:hover {
+  border-color: var(--border-strong);
+}
+
+.list-item:active {
+  background: var(--surface-variant);
+}
+
+/* The fibre core colour itself is the line's identity, so it gets a solid
+   bar rather than a thin decorative stripe. */
+.swatch {
+  width: 8px;
+  align-self: stretch;
+  border-radius: 2px;
+  flex: none;
+}
+
+.empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.timeline {
+  border-left: 2px solid var(--border);
+  padding-left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.timeline .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--jacket);
+  margin-left: -17px;
+  margin-top: 5px;
+  border: 2px solid var(--surface);
+}
+
+.code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.qr-frame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.qr-frame img {
+  width: min(100%, 300px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  .app-nav,
+  .app-header,
+  .btn {
+    display: none;
+  }
+}

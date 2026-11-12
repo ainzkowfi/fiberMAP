@@ -1,0 +1,184 @@
+schema_name: fiberMAP Agusan del Sur
+schema_description: Lean offline basemap for fiber line field work - roads, water, boundaries, place labels
+attribution: <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>
+version: 1
+
+args:
+  osm_local_path: D:\fibermap-build\caraga.osm.pbf
+
+sources:
+  osm:
+    type: osm
+    local_path: '${ args.osm_local_path }'
+
+layers:
+  # ---- Water ----------------------------------------------------------
+  - id: water
+    features:
+      - source: osm
+        geometry: polygon
+        min_zoom: 5
+        include_when:
+          natural: water
+        attributes:
+          - key: class
+            value: water
+      - source: osm
+        geometry: polygon
+        min_zoom: 7
+        include_when:
+          waterway: [riverbank, dock]
+        attributes:
+          - key: class
+            value: riverbank
+      - source: osm
+        geometry: polygon
+        min_zoom: 8
+        include_when:
+          landuse: [reservoir, basin]
+        attributes:
+          - key: class
+            value: reservoir
+    tile_post_process:
+      merge_polygons:
+        min_area: 1
+        min_area_at_max_zoom: 0.25
+        tolerance: 0.5
+        tolerance_at_max_zoom: 0.125
+
+  - id: waterway
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 8
+        include_when:
+          waterway: [river, stream, canal, drain]
+        attributes:
+          - key: class
+            tag_value: waterway
+          - key: name
+            tag_value: name
+            min_zoom: 12
+
+  # ---- Land use -------------------------------------------------------
+  - id: landuse
+    features:
+      - source: osm
+        geometry: polygon
+        min_zoom: 8
+        include_when:
+          landuse: [residential, commercial, industrial, quarry, cemetery, military, railway, farmland, meadow, orchard, vineyard, greenhouse]
+        attributes:
+          - key: class
+            tag_value: landuse
+      - source: osm
+        geometry: polygon
+        min_zoom: 9
+        include_when:
+          natural: [wood, scrub, grass, sand, beach, wetland, heath]
+        attributes:
+          - key: class
+            tag_value: natural
+      - source: osm
+        geometry: polygon
+        min_zoom: 10
+        include_when:
+          leisure: [park, garden, pitch, golf_course, playground]
+        attributes:
+          - key: class
+            tag_value: leisure
+      - source: osm
+        geometry: polygon
+        min_zoom: 10
+        include_when:
+          amenity: [school, hospital, university, college, marketplace]
+        attributes:
+          - key: class
+            value: amenity
+    tile_post_process:
+      merge_polygons:
+        min_area: 4
+        min_area_at_max_zoom: 0.5
+        tolerance: 1
+        tolerance_at_max_zoom: 0.25
+
+  # ---- Roads ----------------------------------------------------------
+  - id: roads
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 8
+        include_when:
+          highway: [motorway, trunk, primary]
+        attributes:
+          - key: class
+            tag_value: highway
+          - key: name
+            tag_value: name
+            min_zoom: 11
+          - key: ref
+            tag_value: ref
+            min_zoom: 11
+      - source: osm
+        geometry: line
+        min_zoom: 10
+        include_when:
+          highway: [secondary, tertiary, unclassified]
+        attributes:
+          - key: class
+            tag_value: highway
+          - key: name
+            tag_value: name
+            min_zoom: 12
+      - source: osm
+        geometry: line
+        min_zoom: 13
+        include_when:
+          highway: [residential, living_street, service, road, pedestrian, track]
+        attributes:
+          - key: class
+            tag_value: highway
+          - key: name
+            tag_value: name
+            min_zoom: 14
+    tile_post_process:
+      merge_line_strings:
+        min_length: 3
+        min_length_at_max_zoom: 0.125
+        tolerance: 1
+        tolerance_at_max_zoom: 0.0625
+        buffer: 5
+
+  # ---- Administrative boundaries ---------------------------------------
+  - id: boundaries
+    features:
+      - source: osm
+        geometry: line
+        min_zoom: 6
+        include_when:
+          boundary: administrative
+          admin_level: [6, 8]
+        attributes:
+          - key: class
+            tag_value: admin_level
+          - key: name
+            tag_value: name
+            min_zoom: 8
+
+  # ---- Place labels ----------------------------------------------------
+  - id: places
+    features:
+      - source: osm
+        geometry: point
+        min_zoom: 8
+        include_when:
+          place: [city, town, village, suburb, hamlet, municipality]
+        attributes:
+          - key: class
+            tag_value: place
+          - key: name
+            tag_value: name
+          - key: population
+            tag_value: population
+            min_zoom: 10
+            type: integer

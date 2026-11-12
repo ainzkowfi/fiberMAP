@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Maskable variant: full-bleed background, artwork inside the central 80%
+       safe zone so Android's mask never crops the cable endpoints. -->
+  <rect width="64" height="64" fill="#0A7C8C" />
+  <g transform="translate(6.4 6.4) scale(0.8)">
+    <path
+      d="M12 46 C24 46 24 18 36 18 C44 18 48 26 52 30"
+      stroke="#ffffff"
+      stroke-width="5"
+      fill="none"
+      stroke-linecap="round"
+    />
+    <circle cx="14" cy="46" r="7" fill="#C8372D" stroke="#ffffff" stroke-width="3" />
+    <circle cx="50" cy="29" r="7" fill="#2F8F5B" stroke="#ffffff" stroke-width="3" />
+  </g>
+</svg>

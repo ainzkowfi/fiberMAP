@@ -16,3 +16,15 @@
 local.properties
 .env
 debug.keystore
+
+# Web app (fiberMAP PWA)
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
+
+# planetiler writes compiled schema classes into the working directory
+com/
+
+# The go-pmtiles CLI, a 56 MB Windows binary used to inspect the archive.
+# The recipe in web/basemap/README.md builds the archive without it.
+MAP FILES/pmtiles.exe
