@@ -58,7 +58,14 @@ export function ImportPreviewSheet({
           <div className="stack" style={{ gap: 8 }}>
             {TABLES.map(([key, label]) => {
               const counts = preview[key];
-              if (!counts.new && !counts.updated && !counts.skipped && !counts.deleted) {
+              if (
+                !counts.new &&
+                !counts.updated &&
+                !counts.skipped &&
+                !counts.deleted &&
+                !counts.restored &&
+                !counts.orphaned
+              ) {
                 return null;
               }
               return (
@@ -67,6 +74,8 @@ export function ImportPreviewSheet({
                   <span className="small muted" style={{ textAlign: "right" }}>
                     {counts.new} new · {counts.updated} updated · {counts.skipped} older ·{" "}
                     {counts.deleted} deleted
+                    {counts.restored > 0 && ` · ${counts.restored} brought back`}
+                    {counts.orphaned > 0 && ` · ${counts.orphaned} taken down`}
                   </span>
                 </div>
               );
@@ -75,7 +84,9 @@ export function ImportPreviewSheet({
 
           <p className="small muted" style={{ margin: "12px 0 0" }}>
             {totals.new} new, {totals.updated} updated, {totals.skipped} left alone
-            because this phone is newer, {totals.deleted} deleted.
+            because this phone is newer, {totals.deleted} deleted
+            {totals.restored > 0 && `, ${totals.restored} parents brought back`}
+            {totals.orphaned > 0 && `, ${totals.orphaned} children taken down`}.
           </p>
         </div>
 

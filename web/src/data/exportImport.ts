@@ -368,6 +368,10 @@ export interface ImportCounts {
   skipped: number;
   /** Newer than the local row and marked deleted, so it becomes a tombstone. */
   deleted: number;
+  /** A parent brought back because a child under it is newer than the deletion. */
+  restored: number;
+  /** A child taken down because the parent under it is deleted. */
+  orphaned: number;
 }
 
 export interface ImportPreview {
@@ -808,6 +812,8 @@ export interface BundleImportPlan {
   pinEvents: PinEventRow[];
   repairLogs: RepairLogRow[];
   placeLabels: PlaceLabelRow[];
+  /** The bundle this plan came from, so the write can be re-planned. */
+  json: string;
 }
 
 const emptyCounts = (): ImportCounts => ({
@@ -815,7 +821,98 @@ const emptyCounts = (): ImportCounts => ({
   updated: 0,
   skipped: 0,
   deleted: 0,
+  restored: 0,
+  orphaned: 0,
 });
+
+interface MergedRow {
+  id: string;
+  updatedAt: number;
+  deletedAt: number | null;
+}
+
+/**
+ * Picks the rows that win. The merge is by time, not by arrival: a row wins
+ * only if it is strictly newer than the row already on the phone, so a bundle
+ * that is a week old cannot roll back a week of work. A record that was
+ * deleted here stays deleted unless the incoming row is newer than the
+ * deletion.
+ */
+function mergeRows<T extends MergedRow>(
+  incoming: T[],
+  local: T[],
+  counts: ImportCounts,
+): T[] {
+  const existing = new Map(local.map((row) => [row.id, row]));
+  const winners: T[] = [];
+  for (const row of incoming) {
+    const current = existing.get(row.id);
+    if (!current) {
+      counts.new++;
+      winners.push(row);
+      continue;
+    }
+    if (row.updatedAt > current.updatedAt) {
+      if (row.deletedAt !== null) counts.deleted++;
+      else counts.updated++;
+      winners.push(row);
+    } else {
+      counts.skipped++;
+    }
+  }
+  return winners;
+}
+
+/** The state of every row after the merge: the local row unless the incoming wins. */
+function stateAfter<T extends MergedRow>(
+  local: T[],
+  winners: T[],
+): Map<string, T> {
+  const map = new Map<string, T>();
+  for (const row of local) map.set(row.id, row);
+  for (const row of winners) map.set(row.id, row);
+  return map;
+}
+
+function upsert<T extends { id: string }>(list: T[], row: T): void {
+  const at = list.findIndex((r) => r.id === row.id);
+  if (at >= 0) list[at] = row;
+  else list.push(row);
+}
+
+/**
+ * A child cannot stay live under a deleted parent.
+ *
+ * If the child is newer than the parent's deletion, the parent comes back,
+ * because the crew clearly worked on that child after the parent was deleted.
+ * Otherwise the child goes with the parent.
+ */
+function reconcile<T extends MergedRow, P extends MergedRow>(
+  children: T[],
+  resolveParent: (child: T) => P | null | undefined,
+  onChildWrite: (child: T) => void,
+  onParentRestore: (parent: P) => void,
+  childCounts: ImportCounts,
+  parentCounts: ImportCounts,
+  now: number,
+): void {
+  for (const child of children) {
+    if (child.deletedAt !== null) continue;
+    const parent = resolveParent(child);
+    if (!parent || parent.deletedAt === null) continue;
+    if (child.updatedAt > parent.deletedAt) {
+      parent.deletedAt = null;
+      parent.updatedAt = child.updatedAt;
+      onParentRestore(parent);
+      parentCounts.restored++;
+    } else {
+      child.deletedAt = now;
+      child.updatedAt = now;
+      onChildWrite(child);
+      childCounts.orphaned++;
+    }
+  }
+}
 
 /**
  * Works out what an import would do, without doing it.
@@ -827,128 +924,120 @@ const emptyCounts = (): ImportCounts => ({
  */
 export async function planBundleImport(json: string): Promise<BundleImportPlan> {
   const bundle = validateBundle(json);
+  const now = Date.now();
 
-  const plan: BundleImportPlan = {
-    preview: {
-      lines: emptyCounts(),
-      pins: emptyCounts(),
-      events: emptyCounts(),
-      repairLogs: emptyCounts(),
-      placeLabels: emptyCounts(),
-      totals: emptyCounts(),
-    },
-    lines: [],
-    pins: [],
-    pinEvents: [],
-    repairLogs: [],
-    placeLabels: [],
+  const counts = {
+    lines: emptyCounts(),
+    pins: emptyCounts(),
+    events: emptyCounts(),
+    repairLogs: emptyCounts(),
+    placeLabels: emptyCounts(),
+    totals: emptyCounts(),
   };
 
-  const [localLines, localPins, localEvents, localLogs, localLabels] = await Promise.all([
-    db.lines.bulkGet(bundle.lines.map((l) => l.id)),
-    db.pins.bulkGet(bundle.pins.map((p) => p.id)),
-    db.pinEvents.bulkGet(bundle.events.map((e) => e.id)),
-    db.repairLogs.bulkGet(bundle.repairLogs.map((r) => r.id)),
-    db.placeLabels.bulkGet(bundle.placeLabels.map((l) => l.id)),
-  ]);
+  const incoming = {
+    lines: bundle.lines.map(toLineRow),
+    pins: bundle.pins.map(toPinRow),
+    events: bundle.events.map(toEventRow),
+    repairLogs: bundle.repairLogs.map(toRepairLogRow),
+    placeLabels: bundle.placeLabels.map(toPlaceLabelRow),
+  };
 
-  bundle.lines.forEach((incoming, index) => {
-    const local = localLines[index];
-    const counts = plan.preview.lines;
-    if (!local) {
-      counts.new++;
-      plan.lines.push(toLineRow(incoming));
-      return;
-    }
-    if (incoming.updatedAt > local.updatedAt) {
-      if (incoming.deletedAt !== null) counts.deleted++;
-      else counts.updated++;
-      plan.lines.push(toLineRow(incoming));
-    } else {
-      counts.skipped++;
-    }
-  });
+  const local = {
+    lines: await db.lines.toArray(),
+    pins: await db.pins.toArray(),
+    events: await db.pinEvents.toArray(),
+    repairLogs: await db.repairLogs.toArray(),
+    placeLabels: await db.placeLabels.toArray(),
+  };
 
-  bundle.pins.forEach((incoming, index) => {
-    const local = localPins[index];
-    const counts = plan.preview.pins;
-    if (!local) {
-      counts.new++;
-      plan.pins.push(toPinRow(incoming));
-      return;
-    }
-    if (incoming.updatedAt > local.updatedAt) {
-      if (incoming.deletedAt !== null) counts.deleted++;
-      else counts.updated++;
-      plan.pins.push(toPinRow(incoming));
-    } else {
-      counts.skipped++;
-    }
-  });
+  const winners = {
+    lines: mergeRows(incoming.lines, local.lines, counts.lines),
+    pins: mergeRows(incoming.pins, local.pins, counts.pins),
+    events: mergeRows(incoming.events, local.events, counts.events),
+    repairLogs: mergeRows(incoming.repairLogs, local.repairLogs, counts.repairLogs),
+    placeLabels: mergeRows(
+      incoming.placeLabels,
+      local.placeLabels,
+      counts.placeLabels,
+    ),
+  };
 
-  bundle.events.forEach((incoming, index) => {
-    const local = localEvents[index];
-    const counts = plan.preview.events;
-    if (!local) {
-      counts.new++;
-      plan.pinEvents.push(toEventRow(incoming));
-      return;
-    }
-    if (incoming.updatedAt > local.updatedAt) {
-      if (incoming.deletedAt !== null) counts.deleted++;
-      else counts.updated++;
-      plan.pinEvents.push(toEventRow(incoming));
-    } else {
-      counts.skipped++;
-    }
-  });
+  const state = {
+    lines: stateAfter(local.lines, winners.lines),
+    pins: stateAfter(local.pins, winners.pins),
+    events: stateAfter(local.events, winners.events),
+    repairLogs: stateAfter(local.repairLogs, winners.repairLogs),
+  };
 
-  bundle.repairLogs.forEach((incoming, index) => {
-    const local = localLogs[index];
-    const counts = plan.preview.repairLogs;
-    if (!local) {
-      counts.new++;
-      plan.repairLogs.push(toRepairLogRow(incoming));
-      return;
-    }
-    if (incoming.updatedAt > local.updatedAt) {
-      if (incoming.deletedAt !== null) counts.deleted++;
-      else counts.updated++;
-      plan.repairLogs.push(toRepairLogRow(incoming));
-    } else {
-      counts.skipped++;
-    }
-  });
+  const plan: BundleImportPlan = {
+    preview: { ...counts },
+    lines: [...winners.lines],
+    pins: [...winners.pins],
+    pinEvents: [...winners.events],
+    repairLogs: [...winners.repairLogs],
+    placeLabels: [...winners.placeLabels],
+    json,
+  };
 
-  bundle.placeLabels.forEach((incoming, index) => {
-    const local = localLabels[index];
-    const counts = plan.preview.placeLabels;
-    if (!local) {
-      counts.new++;
-      plan.placeLabels.push(toPlaceLabelRow(incoming));
-      return;
-    }
-    if (incoming.updatedAt > local.updatedAt) {
-      if (incoming.deletedAt !== null) counts.deleted++;
-      else counts.updated++;
-      plan.placeLabels.push(toPlaceLabelRow(incoming));
-    } else {
-      counts.skipped++;
-    }
-  });
+  // A pin under a deleted line.
+  reconcile(
+    [...state.pins.values()],
+    (pin) => (pin.lineId ? state.lines.get(pin.lineId) : null),
+    (gone) => upsert(plan.pins, gone),
+    (restored) => upsert(plan.lines, restored),
+    counts.pins,
+    counts.lines,
+    now,
+  );
+
+  // An event under a deleted pin.
+  reconcile(
+    [...state.events.values()],
+    (event) => state.pins.get(event.pinId),
+    (gone) => upsert(plan.pinEvents, gone),
+    (restored) => upsert(plan.pins, restored),
+    counts.events,
+    counts.pins,
+    now,
+  );
+
+  // A repair log under a deleted pin, or under a deleted line when it has no pin.
+  const logs = [...state.repairLogs.values()];
+  reconcile(
+    logs.filter((log) => log.pinId !== null),
+    (log) => (log.pinId ? state.pins.get(log.pinId) : null),
+    (gone) => upsert(plan.repairLogs, gone),
+    (restored) => upsert(plan.pins, restored),
+    counts.repairLogs,
+    counts.pins,
+    now,
+  );
+  reconcile(
+    logs.filter((log) => log.pinId === null && log.lineId !== null),
+    (log) => (log.lineId ? state.lines.get(log.lineId) : null),
+    (gone) => upsert(plan.repairLogs, gone),
+    (restored) => upsert(plan.lines, restored),
+    counts.repairLogs,
+    counts.lines,
+    now,
+  );
 
   for (const table of [
-    plan.preview.lines,
-    plan.preview.pins,
-    plan.preview.events,
-    plan.preview.repairLogs,
-    plan.preview.placeLabels,
+    counts.lines,
+    counts.pins,
+    counts.events,
+    counts.repairLogs,
+    counts.placeLabels,
   ]) {
-    plan.preview.totals.new += table.new;
-    plan.preview.totals.updated += table.updated;
-    plan.preview.totals.skipped += table.skipped;
-    plan.preview.totals.deleted += table.deleted;
+    counts.totals.new += table.new;
+    counts.totals.updated += table.updated;
+    counts.totals.skipped += table.skipped;
+    counts.totals.deleted += table.deleted;
+    counts.totals.restored += table.restored;
+    counts.totals.orphaned += table.orphaned;
   }
+  plan.preview = { ...counts };
 
   return plan;
 }

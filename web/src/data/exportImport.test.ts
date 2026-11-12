@@ -67,6 +67,45 @@ async function putLocalLine(over: Record<string, unknown> = {}) {
   });
 }
 
+async function putLocalPin(over: Record<string, unknown> = {}) {
+  await db.pins.put({
+    id: "pin-1",
+    lineId: "line-1",
+    type: "cut_repair",
+    lat: 8.05,
+    lon: 126.06,
+    snapLat: 8.05,
+    snapLon: 126.06,
+    chainageM: 100,
+    gpsAccuracyM: null,
+    label: "",
+    notes: "",
+    state: "open",
+    spliceLossDbm: null,
+    coilLengthM: 0,
+    createdAt: T0,
+    updatedAt: T0,
+    deletedAt: null,
+    ...over,
+  });
+}
+
+async function putLocalEvent(over: Record<string, unknown> = {}) {
+  await db.pinEvents.put({
+    id: "event-1",
+    pinId: "pin-1",
+    kind: "cut",
+    eventDate: T0,
+    repairMethod: null,
+    spliceLossDbm: null,
+    note: "",
+    createdAt: T0,
+    updatedAt: T0,
+    deletedAt: null,
+    ...over,
+  });
+}
+
 beforeEach(async () => {
   await db.lines.clear();
   await db.pins.clear();
@@ -285,5 +324,108 @@ describe("bundle import", () => {
       T0,
     );
     expect(() => validateBundle(json)).not.toThrow();
+  });
+});
+
+describe("bundle import and orphans", () => {
+  it("brings a deleted line back when a pin under it is newer", async () => {
+    await putLocalLine({ deletedAt: T0, updatedAt: T0 });
+    const plan = await planBundleImport(
+      bundle({
+        pins: [
+          {
+            id: "pin-1",
+            lineId: "line-1",
+            type: "CUT_REPAIR",
+            lat: 8.05,
+            lon: 126.06,
+            chainageM: 100,
+            label: "",
+            notes: "",
+            state: "OPEN",
+            coilLengthM: 0,
+            createdAt: T0 + 1000,
+            updatedAt: T0 + 1000,
+          },
+        ],
+      }),
+    );
+
+    expect(plan.preview.lines.restored).toBe(1);
+    expect(plan.preview.pins.orphaned).toBe(0);
+
+    await applyBundleImport(plan);
+    expect((await db.lines.get("line-1"))?.deletedAt).toBeNull();
+    expect((await db.pins.get("pin-1"))?.deletedAt).toBeNull();
+  });
+
+  it("takes a child down when the parent under it is deleted", async () => {
+    await putLocalLine({ deletedAt: T0, updatedAt: T0 });
+    await putLocalPin({ updatedAt: T0 - 1000 });
+
+    const plan = await planBundleImport(bundle({}));
+    expect(plan.preview.pins.orphaned).toBe(1);
+    expect(plan.preview.lines.restored).toBe(0);
+
+    await applyBundleImport(plan);
+    expect((await db.pins.get("pin-1"))?.deletedAt).not.toBeNull();
+  });
+
+  it("brings the line back when a locally edited pin is newer than the tombstone", async () => {
+    await putLocalLine({ updatedAt: T0 });
+    await putLocalPin({ updatedAt: T0 + 3000 });
+
+    const plan = await planBundleImport(
+      bundle({
+        lines: [line({ deletedAt: T0 + 2000, updatedAt: T0 + 2000 })],
+      }),
+    );
+
+    expect(plan.preview.lines.deleted).toBe(1);
+    expect(plan.preview.lines.restored).toBe(1);
+
+    await applyBundleImport(plan);
+    expect((await db.lines.get("line-1"))?.deletedAt).toBeNull();
+    expect((await db.pins.get("pin-1"))?.deletedAt).toBeNull();
+  });
+
+  it("takes a local event down when the pin under it is deleted", async () => {
+    await putLocalLine();
+    await putLocalPin({ deletedAt: T0, updatedAt: T0 });
+    await putLocalEvent({ updatedAt: T0 - 1000 });
+
+    const plan = await planBundleImport(bundle({}));
+    expect(plan.preview.events.orphaned).toBe(1);
+
+    await applyBundleImport(plan);
+    expect((await db.pinEvents.get("event-1"))?.deletedAt).not.toBeNull();
+  });
+
+  it("brings a deleted pin back when an event under it is newer", async () => {
+    await putLocalLine();
+    await putLocalPin({ deletedAt: T0, updatedAt: T0 });
+
+    const plan = await planBundleImport(
+      bundle({
+        events: [
+          {
+            id: "event-1",
+            pinId: "pin-1",
+            kind: "cut",
+            eventDate: T0 + 1000,
+            repairMethod: "",
+            note: "",
+            updatedAt: T0 + 1000,
+          },
+        ],
+      }),
+    );
+
+    expect(plan.preview.pins.restored).toBe(1);
+    expect(plan.preview.events.orphaned).toBe(0);
+
+    await applyBundleImport(plan);
+    expect((await db.pins.get("pin-1"))?.deletedAt).toBeNull();
+    expect((await db.pinEvents.get("event-1"))?.deletedAt).toBeNull();
   });
 });
