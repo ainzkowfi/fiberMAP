@@ -123,6 +123,27 @@ the one to drop. Nothing has been deleted: the choice belongs to the owner.
 the repository. It only covers lat 7.94 to 8.20, so it misses San Francisco,
 Prosperidad and Bayugan. It is kept for reference and is not used.
 
+## The native app
+
+The web app is also wrapped as a native Android app with Capacitor. The native
+project lives in `web/android/` and is built from the web app's output:
+
+```bash
+cd web
+npm run build
+npx cap sync android
+cd android
+./gradlew assembleDebug
+```
+
+The APK ends up at `web/android/app/build/outputs/apk/debug/app-debug.apk`.
+The Android SDK at `D:\Android\Sdk` (platform 34-36) and JDK 21 are what the
+build uses.
+
+The web app is the source of truth: the native side only provides the phone
+itself (the GPS, the camera, the file picker). The service worker does not run
+in the native shell, because the app's own assets are already on the phone.
+
 ## The audits
 
 `anti-slop/` holds the audit rounds and what was fixed in each. Read them for

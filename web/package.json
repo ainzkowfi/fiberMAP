@@ -12,6 +12,9 @@
     "contrast": "node contrast-check.cjs"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/cli": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
     "dexie": "^4.0.11",
     "dexie-react-hooks": "^1.1.7",
     "jsqr": "^1.4.0",
