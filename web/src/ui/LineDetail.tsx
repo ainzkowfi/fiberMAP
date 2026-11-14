@@ -13,6 +13,8 @@ export interface LineDetailProps {
   onBack: () => void;
   onViewOnMap: () => void;
   onFindByDistance: () => void;
+  onContinueLine: () => void;
+  onAddSlackLoop: () => void;
   onPinClicked: (pin: FiberPin) => void;
   onDeleteLine: () => void;
 }
@@ -34,10 +36,15 @@ export function LineDetail({
   onBack,
   onViewOnMap,
   onFindByDistance,
+  onContinueLine,
+  onAddSlackLoop,
   onPinClicked,
   onDeleteLine,
 }: LineDetailProps) {
   const line = stats.line;
+  const slackLoops = pins.filter((p) => p.type === "SLACK_COIL");
+  const otherPins = pins.filter((p) => p.type !== "SLACK_COIL");
+  const totalSlackM = slackLoops.reduce((sum, p) => sum + p.coilLengthM, 0);
 
   return (
     <div className="scroll" style={{ padding: 14 }}>
@@ -96,6 +103,9 @@ export function LineDetail({
               Find by OTDR
             </button>
           </div>
+          <button className="btn block" onClick={onContinueLine}>
+            Continue drawing this line
+          </button>
         </div>
 
         {line.notes && (
@@ -106,13 +116,56 @@ export function LineDetail({
 
         <div className="card">
           <div className="row between" style={{ marginBottom: 8 }}>
-            <strong>Pins ({pins.length})</strong>
+            <strong>Slack loops ({slackLoops.length})</strong>
+            <span className="small muted">{Math.round(totalSlackM)} m available</span>
           </div>
-          {pins.length === 0 ? (
-            <div className="small muted">No pins on this line yet.</div>
+          {slackLoops.length === 0 ? (
+            <div className="small muted">No slack loops recorded.</div>
           ) : (
             <div className="stack" style={{ gap: 8 }}>
-              {pins.map((pin) => {
+              {slackLoops.map((pin) => (
+                <button
+                  key={pin.id}
+                  className="list-item"
+                  onClick={() => onPinClicked(pin)}
+                >
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 5,
+                      background: pinColor(pin),
+                      flex: "none",
+                    }}
+                  />
+                  <span className="grow" style={{ textAlign: "left" }}>
+                    <span style={{ fontWeight: 600, display: "block" }}>
+                      {pin.coilLengthM.toFixed(0)} m of slack
+                    </span>
+                    <span className="small muted">
+                      {pin.chainageM !== null
+                        ? formatChainage(pin.chainageM, chainageStyle)
+                        : "Off-line point"}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          <button className="btn block" style={{ marginTop: 12 }} onClick={onAddSlackLoop}>
+            Add slack loop
+          </button>
+        </div>
+
+        <div className="card">
+          <div className="row between" style={{ marginBottom: 8 }}>
+            <strong>Pins ({otherPins.length})</strong>
+          </div>
+          {otherPins.length === 0 ? (
+            <div className="small muted">No other pins on this line yet.</div>
+          ) : (
+            <div className="stack" style={{ gap: 8 }}>
+              {otherPins.map((pin) => {
                 const { title, detail } = pinLabelParts(pin, chainageStyle);
                 return (
                   <button

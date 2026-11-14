@@ -32,7 +32,9 @@ import {
   updatePin,
   uid,
 } from "./data/repo";
-import { computeCumulativeDistances, formatChainage, type GeoPoint, type OtdrMapMatch } from "./core/geometry";
+import { computeCumulativeDistances, formatChainage, snapPointToPolyline, type GeoPoint, type OtdrMapMatch } from "./core/geometry";
+import { routeBetween, type RoadFeature } from "./core/routing";
+import type { Map as MapLibreMap } from "maplibre-gl";
 import type { FiberLine, FiberPin, LineStatus, PinType, RepairMethod } from "./domain/models";
 
 type Tab = "MAP" | "LINES" | "SHARE";
@@ -99,13 +101,21 @@ export default function App() {
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [selectedPin, setSelectedPin] = useState<FiberPin | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
-
+  const isNewPinRef = useRef(false);
   const [drawMode, setDrawMode] = useState(false);
   const [followMe, setFollowMe] = useState(false);
   const [hasCentredOnGps, setHasCentredOnGps] = useState(false);
-  const [drawMethod, setDrawMethod] = useState<"MANUAL" | "DRIVE_GPS">("MANUAL");
+  const [drawMethod, setDrawMethod] = useState<"MANUAL" | "DRIVE_GPS" | "AUTO_PATH">("MANUAL");
+  const [continueLineId, setContinueLineId] = useState<string | null>(null);
   const [drawVertices, setDrawVertices] = useState<GeoPoint[]>([]);
   const [showLineForm, setShowLineForm] = useState(false);
+  const [slackDraft, setSlackDraft] = useState<{
+    lineId: string;
+    lineName: string;
+    chainageM: number;
+    lat: number;
+    lon: number;
+  } | null>(null);
   const [otdrMatch, setOtdrMatch] = useState<OtdrMapMatch | null>(null);
   const [otdrLineId, setOtdrLineId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -143,6 +153,12 @@ export default function App() {
   useEffect(() => {
     if (gps.fix || gps.error) setGpsOnDemand(false);
   }, [gps.fix, gps.error]);
+
+  // Opening a line arms the Add slack loop action, which needs the crew's
+  // position. Wake the watch now instead of making them tap twice.
+  useEffect(() => {
+    if (overlay === "LINE_DETAIL") setGpsOnDemand(true);
+  }, [overlay]);
 
   useEffect(() => {
     void ensureSeedData();
@@ -222,9 +238,13 @@ export default function App() {
     [drawMethod, gps.vertices, drawVertices],
   );
 
-  const startDraw = (method: "MANUAL" | "DRIVE_GPS") => {
+  const startDraw = (
+    method: "MANUAL" | "DRIVE_GPS" | "AUTO_PATH",
+    continueLineId?: string,
+  ) => {
     setDrawMethod(method);
     setDrawVertices([]);
+    setContinueLineId(continueLineId ?? null);
     setDrawMode(true);
     // Following the GPS while the crew is placing corners would move the map
     // out from under them.
@@ -234,15 +254,23 @@ export default function App() {
     if (method === "DRIVE_GPS") {
       gps.start();
       setToast("GPS recording started. Drive or walk the route.");
+    } else if (method === "AUTO_PATH") {
+      setToast("Tap the start of the route, then the end. The path follows the roads.");
+    } else if (continueLineId) {
+      setToast("Tap the map to add corners to the line.");
     } else {
-      setToast("Tap the map to place corners.");
+      setToast("Tap the map to place corners. Tap a corner again to remove it.");
     }
   };
 
   const cancelDraw = () => {
     setDrawMode(false);
     setDrawVertices([]);
+    setContinueLineId(null);
     gps.reset();
+  };
+  const removeDrawVertex = (index: number) => {
+    setDrawVertices((v) => v.filter((_, i) => i !== index));
   };
 
   const openLine = (id: string) => {
@@ -268,10 +296,56 @@ export default function App() {
   };
 
   const onMapClick = (pt: GeoPoint) => {
-    if (!drawMode || drawMethod !== "MANUAL") return;
-    setDrawVertices((v) => [...v, pt]);
+    if (!drawMode) return;
+    if (drawMethod === "MANUAL") {
+      setDrawVertices((v) => [...v, pt]);
+    } else if (drawMethod === "AUTO_PATH") {
+      setDrawVertices((v) => {
+        if (v.length === 0) return [pt];
+        if (v.length === 1) {
+          // Second tap: route between the two points.
+          const map = (window as unknown as { __map?: MapLibreMap }).__map;
+          if (map) {
+            try {
+              const features = map.querySourceFeatures("pmtiles", {
+                sourceLayer: "roads",
+              }) as unknown as RoadFeature[];
+              const result = routeBetween(features, { lat: v[0].lat, lon: v[0].lon }, pt);
+              if (result && result.path.length >= 2) {
+                const routed: GeoPoint[] = result.path.map(([lon, lat]) => ({ lat, lon }));
+                setDrawVertices(routed);
+                setToast(`Routed ${Math.round(result.lengthM)} m along the roads.`);
+                return routed;
+              }
+              setToast("No road path found between those points.");
+            } catch {
+              setToast("Routing failed. Try again.");
+            }
+          }
+          return [v[0], pt];
+        }
+        // Third tap onwards: re-route from the same start to the new end.
+        const map = (window as unknown as { __map?: MapLibreMap }).__map;
+        if (map) {
+          try {
+            const features = map.querySourceFeatures("pmtiles", {
+              sourceLayer: "roads",
+            }) as unknown as RoadFeature[];
+            const result = routeBetween(features, { lat: v[0].lat, lon: v[0].lon }, pt);
+            if (result && result.path.length >= 2) {
+              const routed: GeoPoint[] = result.path.map(([lon, lat]) => ({ lat, lon }));
+              setToast(`Routed ${Math.round(result.lengthM)} m along the roads.`);
+              return routed;
+            }
+            setToast("No road path found between those points.");
+          } catch {
+            setToast("Routing failed. Try again.");
+          }
+        }
+        return [v[0], pt];
+      });
+    }
   };
-
   const onLongPress = (pt: GeoPoint) => {
     // Hold anywhere drops a cut pin; the sheet lets the tech refine it.
     // No line is named here on purpose: the pin takes the line it is
@@ -284,9 +358,83 @@ export default function App() {
       label: "",
       notes: "",
     }).then((pin) => {
+      isNewPinRef.current = true;
       setSelectedPin(pin);
       setToast("Cut pin dropped. Tap Save to adjust it.");
     });
+  };
+  const beginAddSlackLoop = (line: FiberLine) => {
+    // The loop is where the crew is standing, so a live fix is part of the
+    // record. A stale or loose fix would put spare cable on the wrong span.
+    setGpsOnDemand(true);
+    if (!gps.fix) {
+      setToast("Waiting for your location. Tap Add slack loop again in a moment.");
+      return;
+    }
+    if (Date.now() - gps.fix.timestamp > 90_000) {
+      setToast("Your position is out of date. Wait for a fresh fix, then try again.");
+      return;
+    }
+    if (gps.fix.accuracyM > 50) {
+      setToast(`GPS accuracy is ±${Math.round(gps.fix.accuracyM)} m. Wait for a better fix.`);
+      return;
+    }
+    const snap = snapPointToPolyline(gps.fix.point, line.vertices);
+    if (!snap || snap.distanceToLineM > 50) {
+      setToast("Stand within 50 m of the line to add a loop.");
+      return;
+    }
+    setSlackDraft({
+      lineId: line.id,
+      lineName: line.name,
+      chainageM: snap.chainageM,
+      lat: snap.snapPoint.lat,
+      lon: snap.snapPoint.lon,
+    });
+  };
+
+  const saveSlackLoop = async (totalM: number) => {
+    if (!slackDraft) return;
+    await dropPin({
+      lineId: slackDraft.lineId,
+      type: "SLACK_COIL",
+      lat: slackDraft.lat,
+      lon: slackDraft.lon,
+      label: "",
+      notes: "",
+      coilLengthM: totalM,
+      gpsAccuracyM: gps.fix?.accuracyM ?? null,
+    });
+    setToast(
+      `Slack loop added: ${Math.round(totalM)} m at ${formatChainage(
+        slackDraft.chainageM,
+        chainageStyle,
+      )}.`,
+    );
+    setSlackDraft(null);
+  };
+
+  const extendLine = async () => {
+    if (!continueLineId) return;
+    const existing = lines.find((l) => l.id === continueLineId);
+    if (!existing) {
+      setToast("That line is no longer on the map.");
+      return;
+    }
+    if (activeVertices.length < 2) {
+      setToast("Add at least one more corner.");
+      return;
+    }
+    const vertices = [...existing.vertices, ...activeVertices];
+    await saveLine({
+      ...existing,
+      vertices,
+      lengthMapM: computeCumulativeDistances(vertices).pop() ?? 0,
+      updatedAt: Date.now(),
+    });
+    cancelDraw();
+    setTab("MAP");
+    setToast(`Extended "${existing.name}".`);
   };
 
   const saveNewLine = async (form: {
@@ -297,7 +445,13 @@ export default function App() {
     colorKey: string;
     status: LineStatus;
   }) => {
-    const vertices = drawVertices.length >= 2 ? drawVertices : activeVertices;
+    const newVertices = drawVertices.length >= 2 ? drawVertices : activeVertices;
+    if (newVertices.length < 1) {
+      setToast("Need at least one point on the route.");
+      return;
+    }
+
+    const vertices = newVertices;
     if (vertices.length < 2) {
       setToast("Need at least two points on the route.");
       return;
@@ -324,7 +478,7 @@ export default function App() {
     cancelDraw();
     setShowLineForm(false);
     setSelectedLineId(line.id);
-    setTab("LINES");
+    setTab("MAP");
     setToast(`Saved "${line.name}".`);
   };
 
@@ -341,10 +495,10 @@ export default function App() {
     setOtdrMatch(null);
     setTab("MAP");
     setOverlay("NONE");
+    isNewPinRef.current = true;
     setSelectedPin(pin);
     setToast("Cut pin dropped at the OTDR location.");
   };
-
   const mapFiles =
     useLiveQuery(async () => db.mapFiles.orderBy("buildDate").reverse().toArray(), [], []) ??
     [];
@@ -419,8 +573,9 @@ export default function App() {
             onUserMovedMap={() => setFollowMe(false)}
             locationError={gps.error}
             onMapClick={onMapClick}
+            onDrawVertexRemove={removeDrawVertex}
             onLongPress={onLongPress}
-            onPinClick={(pin) => setSelectedPin(pin)}
+            onPinClick={(pin) => { isNewPinRef.current = false; setSelectedPin(pin); }}
             placeLabels={placeLabels}
             placingPlace={placeMode}
             onPlaceTapped={(pt) => {
@@ -449,53 +604,79 @@ export default function App() {
 
           {drawMode && (
             <>
-              <div className="draw-banner">
-                {drawMethod === "MANUAL"
-                  ? `Tap the map to place corners · ${activeVertices.length} placed`
-                  : `GPS recording · ${(gps.distanceM / 1000).toFixed(2)} km · ${activeVertices.length} points`}
-              </div>
+                <div className="draw-banner">
+                {drawMethod === "AUTO_PATH"
+                  ? (activeVertices.length === 0
+                      ? "Tap the start of the route"
+                      : activeVertices.length === 1
+                        ? "Tap the end of the route"
+                        : `${activeVertices.length} points along the road`)
+                  : drawMethod === "MANUAL"
+                    ? continueLineId
+                      ? `Tap the map to add corners - ${activeVertices.length} new (tap a number to remove)`
+                      : `Tap the map to place corners - ${activeVertices.length} placed (tap a number to remove)`
+                    : `GPS recording - ${(gps.distanceM / 1000).toFixed(2)} km - ${activeVertices.length} points`}
+                 </div>
 
-              <div className="map-hud bottom" style={{ justifyContent: "space-between" }}>
-                <div className="stack" style={{ gap: 8 }}>
-                  {drawMethod === "DRIVE_GPS" && (
-                    <>
-                      <button
-                        className="btn"
-                        onClick={gps.isPaused ? gps.resume : gps.pause}
-                      >
-                        {gps.isPaused ? "Resume" : "Pause"}
-                      </button>
-                      <button className="btn" onClick={gps.undo}>
-                        Undo point
-                      </button>
-                    </>
-                  )}
-                  <button className="btn" onClick={cancelDraw}>
-                    Cancel
-                  </button>
-                </div>
-                <button
-                  className="btn primary"
-                  disabled={activeVertices.length < 2}
-                  onClick={() => setShowLineForm(true)}
-                >
-                  Save line
-                </button>
-              </div>
+               <div className="map-hud bottom" style={{ justifyContent: "space-between" }}>
+                 <div className="stack" style={{ gap: 8 }}>
+                   {drawMethod === "DRIVE_GPS" && (
+                     <>
+                       <button
+                         className="btn"
+                         onClick={gps.isPaused ? gps.resume : gps.pause}
+                       >
+                         {gps.isPaused ? "Resume" : "Pause"}
+                       </button>
+                       <button className="btn" onClick={gps.undo}>
+                         Undo point
+                       </button>
+                     </>
+                   )}
+                   <button className="btn" onClick={cancelDraw}>
+                     Cancel
+                   </button>
+                 </div>
+                 <button
+                   className="btn primary"
+                   disabled={activeVertices.length < 2}
+                   onClick={() =>
+                     continueLineId ? void extendLine() : setShowLineForm(true)
+                   }
+                 >
+                   Save line
+                 </button>
+               </div>
             </>
           )}
 
-          {!drawMode && (
-            <div className="map-hud bottom" style={{ justifyContent: "flex-end" }}>
-              <button
-                className="btn primary"
-                onClick={() => startDraw("MANUAL")}
-                aria-label="Draw new fiber line"
-              >
-                + Draw
-              </button>
-            </div>
-          )}
+           {!drawMode && (
+             <div className="map-hud bottom" style={{ justifyContent: "flex-end", gap: 4 }}>
+               <button
+                 className="btn"
+                 onClick={() => startDraw("AUTO_PATH")}
+                 aria-label="Auto path along roads"
+                 title="Auto path along roads"
+               >
+                 Auto
+               </button>
+               <button
+                 className="btn"
+                 onClick={() => startDraw("DRIVE_GPS")}
+                 aria-label="Record a GPS track"
+                 title="GPS track"
+               >
+                 GPS
+               </button>
+               <button
+                 className="btn primary"
+                 onClick={() => startDraw("MANUAL")}
+                 aria-label="Draw new fiber line"
+               >
+                 + Draw
+               </button>
+             </div>
+           )}
 
           {basemapProgress && (
             <div
@@ -576,6 +757,8 @@ export default function App() {
                   setOtdrLineId(selectedStats.line.id);
                   setOverlay("OTDR");
                 }}
+                onContinueLine={() => startDraw("MANUAL", selectedStats.line.id)}
+                onAddSlackLoop={() => beginAddSlackLoop(selectedStats.line)}
                 onPinClicked={focusPin}
                 onDeleteLine={() => {
                   const s = selectedStats;
@@ -621,9 +804,7 @@ export default function App() {
                     pins: s.totalPinsCount,
                     repairs: s.totalRepairs,
                   })
-                }
-                onStartNewLine={() => startDraw("MANUAL")}
-                onRecordGpsLine={() => startDraw("DRIVE_GPS")}
+                  }
               />
             )}
 
@@ -680,8 +861,16 @@ export default function App() {
           lines={lines}
           events={events}
           chainageStyle={chainageStyle}
-          onClose={() => setSelectedPin(null)}
+          onClose={() => {
+            const pin = selectedPin;
+            setSelectedPin(null);
+            if (isNewPinRef.current && pin) {
+              isNewPinRef.current = false;
+              void deletePin(pin.id);
+            }
+          }}
           onSave={async (patch) => {
+            isNewPinRef.current = false;
             await updatePin({ ...selectedPin, ...patch });
             setSelectedPin(null);
             setToast("Pin updated.");
@@ -695,7 +884,6 @@ export default function App() {
           onDelete={() => setPendingDelete({ kind: "PIN", id: selectedPin.id })}
         />
       )}
-
       {labelDraft && (
         <PlaceLabelSheet
           name={labelDraft.name}
@@ -771,6 +959,16 @@ export default function App() {
         <LineForm
           onCancel={() => setShowLineForm(false)}
           onSave={saveNewLine}
+        />
+      )}
+
+      {slackDraft && (
+        <SlackLoopSheet
+          lineName={slackDraft.lineName}
+          chainageM={slackDraft.chainageM}
+          chainageStyle={chainageStyle}
+          onCancel={() => setSlackDraft(null)}
+          onSave={saveSlackLoop}
         />
       )}
 
@@ -945,6 +1143,93 @@ function LineForm({
             }
           >
             Save line
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SlackLoopSheet({
+  lineName,
+  chainageM,
+  chainageStyle,
+  onCancel,
+  onSave,
+}: {
+  lineName: string;
+  chainageM: number;
+  chainageStyle: boolean;
+  onCancel: () => void;
+  onSave: (totalM: number) => void | Promise<void>;
+}) {
+  const [total, setTotal] = useState("");
+  const [busy, setBusy] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const parsed = parseFloat(total);
+  const valid = Number.isFinite(parsed) && parsed > 0;
+
+  const submit = async () => {
+    if (!valid || busy) return;
+    setBusy(true);
+    try {
+      await onSave(parsed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useDialog(sheetRef);
+  useEnter(() => {
+    void submit();
+  });
+
+  return (
+    <div className="scrim" onClick={onCancel}>
+      <div
+        ref={sheetRef}
+        className="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="slack-loop-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sheet-head">
+          <h2 className="grow" id="slack-loop-title">
+            Add slack loop
+          </h2>
+          <button className="btn ghost" onClick={onCancel} aria-label="Close slack loop form">
+            ✕
+          </button>
+        </div>
+        <div className="sheet-body">
+          <div className="card stack" style={{ gap: 4 }}>
+            <span className="small muted">{lineName}</span>
+            <strong>{formatChainage(chainageM, chainageStyle)}</strong>
+            <span className="small muted">Your GPS position, snapped to the line.</span>
+          </div>
+          <div className="field">
+            <label htmlFor="slack-total">Total slack (m)</label>
+            <input
+              id="slack-total"
+              autoFocus
+              inputMode="decimal"
+              placeholder="300"
+              value={total}
+              onChange={(e) => setTotal(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="sheet-foot">
+          <button className="btn" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            className="btn primary"
+            disabled={!valid || busy}
+            onClick={() => void submit()}
+          >
+            Add loop
           </button>
         </div>
       </div>

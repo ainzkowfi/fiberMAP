@@ -67,6 +67,7 @@ export interface MapViewProps {
    */
   followMe: boolean;
   onMapClick: (pt: GeoPoint) => void;
+  onDrawVertexRemove?: (index: number) => void;
   onLongPress: (pt: GeoPoint) => void;
   onPinClick: (pin: FiberPin) => void;
   /** The names the crew put on the map themselves. */
@@ -108,6 +109,7 @@ export function MapView({
   theme,
   followMe,
   onMapClick,
+  onDrawVertexRemove,
   onLongPress,
   onPinClick,
   placeLabels,
@@ -145,6 +147,7 @@ export function MapView({
   // Latest callbacks for the map event handlers, which are registered once.
   const handlers = useRef({
     onMapClick,
+    onDrawVertexRemove,
     onLongPress,
     onPinClick,
     onPlaceTapped,
@@ -156,6 +159,7 @@ export function MapView({
   });
   handlers.current = {
     onMapClick,
+    onDrawVertexRemove,
     onLongPress,
     onPinClick,
     onPlaceTapped,
@@ -197,6 +201,9 @@ export function MapView({
       touchPitch: false,
     });
     mapRef.current = map;
+    // Exposed for the auto-path routing, which needs the live map to read the
+    // road layer. Not part of the app's public surface.
+    (window as unknown as { __map?: MapLibreMap }).__map = map;
 
     map.on("load", () => {
       // Only the crew's own fibre lines and pins are drawn from local data.
@@ -390,10 +397,17 @@ export function MapView({
       }
       if (!handlers.current.drawMode) setLineBubble(null);
       if (handlers.current.drawMode) {
+        const drawHits = map.queryRenderedFeatures(e.point, { layers: ["draw-verts"] });
+        if (drawHits.length > 0) {
+          const idx = drawHits[0].properties?.index as number | undefined;
+          if (typeof idx === "number") {
+            handlers.current.onDrawVertexRemove?.(idx);
+            return;
+          }
+        }
         handlers.current.onMapClick({ lat: e.lngLat.lat, lon: e.lngLat.lng });
       }
     };
-
     map.on("click", onClick);
     map.on("zoomend", () => setZoom(map.getZoom()));
     map.on("idle", () => refreshOsmNames());
@@ -401,7 +415,6 @@ export function MapView({
       const c = map.getCenter();
       setCenter({ lat: c.lat, lon: c.lng });
     });
-    // A drag is the crew saying "I know where I am". MapLibre reports it as a
     // gesture, which keeps follow mode from fighting the user.
     map.on("dragstart", () => handlers.current.onUserMovedMap());
 
@@ -694,14 +707,40 @@ export function MapView({
     if (!src) return;
     src.setData(
       featureCollection(
-        drawVertices.map((v) => ({
+         drawVertices.map((v, i) => ({
           type: "Feature",
-          properties: {},
+          properties: { index: i },
           geometry: { type: "Point", coordinates: [v.lon, v.lat] },
         })),
       ),
     );
   }, [drawVertices, ready]);
+
+  // Numbered markers on each draw vertex, so the crew can see the order and
+  // tap one to remove it. MapLibre circle layers cannot show text offline, so
+  // these are DOM markers.
+  const drawVertexMarkersRef = useRef<Map<number, Marker>>(new Map());
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const markers = drawVertexMarkersRef.current;
+    for (const m of markers.values()) m.remove();
+    markers.clear();
+    if (!drawMode) return;
+    drawVertices.forEach((v, i) => {
+      const el = document.createElement("div");
+      el.className = "draw-vertex-label";
+      el.textContent = String(i + 1);
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        handlers.current.onDrawVertexRemove?.(i);
+      });
+      const marker = new Marker({ element: el, anchor: "center" })
+        .setLngLat([v.lon, v.lat])
+        .addTo(map);
+      markers.set(i, marker);
+    });
+  }, [drawVertices, drawMode, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -732,7 +771,7 @@ export function MapView({
           ? [
               {
                 type: "Feature",
-                properties: {},
+                 properties: {},
                 geometry: {
                   type: "Point",
                   coordinates: [userLocation.lon, userLocation.lat],
@@ -845,16 +884,14 @@ export function MapView({
             <circle cx="7.5" cy="8.5" r="1.3" fill="currentColor" stroke="none" />
           </svg>
         </button>
+        {/* The basemap is OpenStreetMap data, so the credit stays on the map.
+            It rides the same row as the fabs, out of the thumb's way. */}
+        <div className="map-attrib">© OpenStreetMap contributors</div>
       </div>
 
-      <div className="map-readout" style={{ position: "absolute", bottom: 12, left: 12 }}>
-        {readout}
-      </div>
-
-      {/* The basemap is built from OpenStreetMap data, so the credit has to
-          be on the map. It sits above the readout, out of the way of the
-          thumb controls. */}
-      <div className="map-attrib">© OpenStreetMap contributors</div>
+      {!drawMode && !locationError && (
+        <div className="map-readout">{readout}</div>
+      )}
 
       {locationError && (
         <div

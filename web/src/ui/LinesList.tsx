@@ -19,8 +19,6 @@ export interface LinesListProps {
   onLineClick: (stats: LineWithStats) => void;
   onSnapToMap: (stats: LineWithStats) => void;
   onDeleteLine: (stats: LineWithStats) => void;
-  onStartNewLine: () => void;
-  onRecordGpsLine: () => void;
 }
 
 const TRASH_ICON = (
@@ -45,8 +43,6 @@ export function LinesList({
   onLineClick,
   onSnapToMap,
   onDeleteLine,
-  onStartNewLine,
-  onRecordGpsLine,
 }: LinesListProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("ALL");
@@ -67,14 +63,6 @@ export function LinesList({
   return (
     <div className="scroll" style={{ padding: 14 }}>
       <div className="stack">
-        <div className="row">
-          <button className="btn primary grow" onClick={onStartNewLine}>
-            + Draw new line
-          </button>
-          <button className="btn" onClick={onRecordGpsLine}>
-            GPS track
-          </button>
-        </div>
 
         <input
           type="search"

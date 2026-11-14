@@ -584,8 +584,10 @@ a:focus-visible {
   align-items: flex-start;
 }
 
+/* The draw controls stack above the map's own control row, so the two never
+   sit on the same line on a phone. */
 .map-hud.bottom {
-  bottom: 12px;
+  bottom: 68px;
   left: 12px;
   right: 12px;
   flex-direction: row;
@@ -638,8 +640,8 @@ a:focus-visible {
 
 .map-readout {
   position: absolute;
-  bottom: 10px;
-  left: 10px;
+  top: 12px;
+  left: 12px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -732,7 +734,7 @@ a:focus-visible {
   opacity: 1;
 }
 
-/* The map controls sit at the top of the bottom nav bar, where the thumb
+/* The map controls sit just above the bottom nav bar, where the thumb
    reaches them without stretching. Zoom is left to the pinch gesture. */
 .map-bottom-bar {
   position: absolute;
@@ -741,14 +743,20 @@ a:focus-visible {
   right: 12px;
   display: flex;
   flex-direction: row;
-  justify-content: center;
-  gap: 8px;
+  justify-content: flex-start;
+  align-items: flex-end;
+  gap: 6px;
   z-index: 5;
   pointer-events: none;
 }
 
 .map-bottom-bar > * {
   pointer-events: auto;
+}
+
+.map-bottom-bar .fab,
+.map-bottom-bar .btn {
+  flex: none;
 }
 
 /* Place names from the archive: quieter than the municipality names, because
@@ -761,13 +769,11 @@ a:focus-visible {
 }
 
 
-/* The basemap is OpenStreetMap data. The credit stays on the map, in a
-   corner the thumb does not reach, and on a chip of the app's own surface so
-   it is readable over any tile. */
+/* The basemap is OpenStreetMap data. The credit stays on the map as a chip
+   of the app's own surface so it is readable over any tile. */
 .map-attrib {
-  position: absolute;
-  bottom: 42px;
-  left: 12px;
+  margin-left: auto;
+  align-self: center;
   font-size: 9px;
   font-weight: 600;
   color: var(--muted);
@@ -966,4 +972,27 @@ a:focus-visible {
   .btn {
     display: none;
   }
+}
+
+/* Numbered vertex on a line being drawn. Tappable to remove that corner. */
+.draw-vertex-label {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--jacket);
+  color: #ffffff;
+  border: 2px solid #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-float);
+  pointer-events: auto;
+  user-select: none;
+}
+
+.draw-vertex-label:hover {
+  background: var(--danger);
 }
