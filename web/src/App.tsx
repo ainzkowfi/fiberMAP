@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { MapView, pinColor } from "./ui/MapView";
+import { MapView } from "./ui/MapView";
+import { pinColor } from "./ui/pinShapes";
 import { LinesList } from "./ui/LinesList";
-import { LineDetail } from "./ui/LineDetail";
+import { LineDetail, type OtherWire } from "./ui/LineDetail";
 import { PinSheet } from "./ui/PinSheet";
+import { WiresSheet, type WiresRow } from "./ui/WiresSheet";
 import { OtdrDialog } from "./ui/OtdrDialog";
 import { Share } from "./ui/Share";
 import { Settings } from "./ui/Settings";
@@ -32,8 +34,9 @@ import {
   updatePin,
   uid,
 } from "./data/repo";
-import { computeCumulativeDistances, formatChainage, snapPointToPolyline, type GeoPoint, type OtdrMapMatch } from "./core/geometry";
+import { computeCumulativeDistances, formatChainage, getPointAtChainage, snapPointToPolyline, type GeoPoint, type OtdrMapMatch } from "./core/geometry";
 import { routeBetween, type RoadFeature } from "./core/routing";
+import { wiresOnPath } from "./core/overlap";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import type { FiberLine, FiberPin, LineStatus, PinType, RepairMethod } from "./domain/models";
 
@@ -99,6 +102,12 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("MAP");
   const [overlay, setOverlay] = useState<Overlay>("NONE");
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  // The line the crew picked on the map: it gets the chainage tape, the end
+  // marks and the highlight.
+  const [focusedLineId, setFocusedLineId] = useState<string | null>(null);
+  // Wires that share one path, when the crew taps a road that carries more
+  // than one cable.
+  const [wiresAtPoint, setWiresAtPoint] = useState<string[] | null>(null);
   const [selectedPin, setSelectedPin] = useState<FiberPin | null>(null);
   const [focus, setFocus] = useState<Focus | null>(null);
   const isNewPinRef = useRef(false);
@@ -115,7 +124,11 @@ export default function App() {
     chainageM: number;
     lat: number;
     lon: number;
+    source: "GPS" | "MIDPOINT";
   } | null>(null);
+  // The crew arms NAP placement, taps the map, and the pin snaps to the wire
+  // under the tap. Same idea as naming a place, different payload.
+  const [napMode, setNapMode] = useState(false);
   const [otdrMatch, setOtdrMatch] = useState<OtdrMapMatch | null>(null);
   const [otdrLineId, setOtdrLineId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -246,6 +259,8 @@ export default function App() {
     setDrawVertices([]);
     setContinueLineId(continueLineId ?? null);
     setDrawMode(true);
+    setNapMode(false);
+    setFocusedLineId(continueLineId ?? null);
     // Following the GPS while the crew is placing corners would move the map
     // out from under them.
     setFollowMe(false);
@@ -275,11 +290,13 @@ export default function App() {
 
   const openLine = (id: string) => {
     setSelectedLineId(id);
+    setFocusedLineId(id);
     setOverlay("LINE_DETAIL");
   };
 
   const snapToMap = (line: FiberLine) => {
     setSelectedLineId(line.id);
+    setFocusedLineId(line.id);
     setFollowMe(false);
     const mid = line.vertices[Math.floor(line.vertices.length / 2)] ?? line.vertices[0];
     if (mid) setFocus({ lat: mid.lat, lon: mid.lon, zoom: 14.5 });
@@ -295,7 +312,31 @@ export default function App() {
     setOverlay("NONE");
   };
 
+  const dropNap = async (pt: GeoPoint) => {
+    const pin = await dropPin({
+      lineId: null,
+      type: "SPLITTER_NAP",
+      lat: pt.lat,
+      lon: pt.lon,
+      label: "",
+      notes: "",
+    });
+    isNewPinRef.current = true;
+    setSelectedPin(pin);
+    const line = pin.lineId ? lines.find((l) => l.id === pin.lineId) : undefined;
+    setToast(
+      line && pin.chainageM !== null
+        ? `NAP snapped to "${line.name}" at ${formatChainage(pin.chainageM, chainageStyle)}.`
+        : "NAP added off-line. Tap Save to keep it where you tapped.",
+    );
+  };
+
   const onMapClick = (pt: GeoPoint) => {
+    if (napMode) {
+      setNapMode(false);
+      void dropNap(pt);
+      return;
+    }
     if (!drawMode) return;
     if (drawMethod === "MANUAL") {
       setDrawVertices((v) => [...v, pt]);
@@ -364,24 +405,18 @@ export default function App() {
     });
   };
   const beginAddSlackLoop = (line: FiberLine) => {
-    // The loop is where the crew is standing, so a live fix is part of the
-    // record. A stale or loose fix would put spare cable on the wrong span.
+    // A loop is a field note, not a survey point, so a loose fix never blocks
+    // it. If the fix is nowhere near this line, the middle of the line beats
+    // snapping the loop onto an endpoint hundreds of metres away.
     setGpsOnDemand(true);
-    if (!gps.fix) {
-      setToast("Waiting for your location. Tap Add slack loop again in a moment.");
-      return;
+    let snap = gps.fix ? snapPointToPolyline(gps.fix.point, line.vertices) : null;
+    const useGps = snap !== null && snap.distanceToLineM <= 200;
+    if (!useGps) {
+      const middle = getPointAtChainage(line.lengthMapM / 2, line.vertices);
+      snap = middle ? snapPointToPolyline(middle, line.vertices) : null;
     }
-    if (Date.now() - gps.fix.timestamp > 90_000) {
-      setToast("Your position is out of date. Wait for a fresh fix, then try again.");
-      return;
-    }
-    if (gps.fix.accuracyM > 50) {
-      setToast(`GPS accuracy is ±${Math.round(gps.fix.accuracyM)} m. Wait for a better fix.`);
-      return;
-    }
-    const snap = snapPointToPolyline(gps.fix.point, line.vertices);
-    if (!snap || snap.distanceToLineM > 50) {
-      setToast("Stand within 50 m of the line to add a loop.");
+    if (!snap) {
+      setToast("This line has no path to attach a loop to.");
       return;
     }
     setSlackDraft({
@@ -390,6 +425,7 @@ export default function App() {
       chainageM: snap.chainageM,
       lat: snap.snapPoint.lat,
       lon: snap.snapPoint.lon,
+      source: useGps ? "GPS" : "MIDPOINT",
     });
   };
 
@@ -421,8 +457,8 @@ export default function App() {
       setToast("That line is no longer on the map.");
       return;
     }
-    if (activeVertices.length < 2) {
-      setToast("Add at least one more corner.");
+    if (activeVertices.length < 1) {
+      setToast("Add at least one corner to continue the line.");
       return;
     }
     const vertices = [...existing.vertices, ...activeVertices];
@@ -504,6 +540,20 @@ export default function App() {
     [];
 
   const selectedStats = linesWithStats.find((s) => s.line.id === selectedLineId) ?? null;
+  // Other cables recorded along the same road as the open line.
+  const otherWires = selectedStats
+    ? wiresOnPath(lines, selectedStats.line.id)
+        .map((id) => {
+          const l = lines.find((x) => x.id === id);
+          if (!l) return null;
+          return {
+            id,
+            name: l.name,
+            lengthLabel: formatChainage(l.lengthMapM, chainageStyle),
+          };
+        })
+        .filter((w): w is OtherWire => w !== null)
+    : [];
   const otdrLine = lines.find((l) => l.id === otdrLineId) ?? null;
 
   // What the map shows in the bubble when a line is tapped.
@@ -531,10 +581,8 @@ export default function App() {
         Skip to content
       </a>
       <header className="app-header">
-        <div className="grow">
-          <h1>fiberMAP</h1>
-          <p className="sub">Agusan del Sur · offline field mapping</p>
-        </div>
+        <h1>fiberMAP</h1>
+        <p className="sub">Agusan del Sur · offline field mapping</p>
       </header>
 
       <main className="app-body" id="main">
@@ -546,6 +594,9 @@ export default function App() {
             pins={pins}
             lineBubbles={lineBubbles}
             selectedLineId={selectedLineId}
+            focusedLineId={focusedLineId}
+            onWiresAtPoint={(ids) => setWiresAtPoint(ids)}
+            onFocusLine={(id) => setFocusedLineId(id)}
             selectedPinId={selectedPin?.id ?? null}
             focus={focus}
             drawMode={drawMode}
@@ -569,6 +620,7 @@ export default function App() {
             onTogglePlaceMode={() => {
               setPlaceMode((v) => !v);
               setDrawMode(false);
+              setNapMode(false);
             }}
             onUserMovedMap={() => setFollowMe(false)}
             locationError={gps.error}
@@ -578,6 +630,8 @@ export default function App() {
             onPinClick={(pin) => { isNewPinRef.current = false; setSelectedPin(pin); }}
             placeLabels={placeLabels}
             placingPlace={placeMode}
+            placingPin={napMode}
+            chainageStyle={chainageStyle}
             onPlaceTapped={(pt) => {
               setPlaceMode(false);
               setLabelDraft({ id: null, name: "", lat: pt.lat, lon: pt.lon });
@@ -602,6 +656,12 @@ export default function App() {
             </div>
           )}
 
+          {napMode && (
+            <div className="draw-banner">
+              Tap the map to place the NAP
+            </div>
+          )}
+
           {drawMode && (
             <>
                 <div className="draw-banner">
@@ -619,7 +679,7 @@ export default function App() {
                  </div>
 
                <div className="map-hud bottom" style={{ justifyContent: "space-between" }}>
-                 <div className="stack" style={{ gap: 8 }}>
+                 <div className="dock">
                    {drawMethod === "DRIVE_GPS" && (
                      <>
                        <button
@@ -629,7 +689,7 @@ export default function App() {
                          {gps.isPaused ? "Resume" : "Pause"}
                        </button>
                        <button className="btn" onClick={gps.undo}>
-                         Undo point
+                         Undo
                        </button>
                      </>
                    )}
@@ -637,44 +697,60 @@ export default function App() {
                      Cancel
                    </button>
                  </div>
-                 <button
-                   className="btn primary"
-                   disabled={activeVertices.length < 2}
-                   onClick={() =>
-                     continueLineId ? void extendLine() : setShowLineForm(true)
-                   }
-                 >
-                   Save line
-                 </button>
+                 <div className="dock">
+                   <button
+                     className="btn primary"
+                     disabled={activeVertices.length < (continueLineId ? 1 : 2)}
+                     onClick={() =>
+                       continueLineId ? void extendLine() : setShowLineForm(true)
+                     }
+                   >
+                     Save line
+                   </button>
+                 </div>
                </div>
             </>
           )}
 
            {!drawMode && (
-             <div className="map-hud bottom" style={{ justifyContent: "flex-end", gap: 4 }}>
-               <button
-                 className="btn"
-                 onClick={() => startDraw("AUTO_PATH")}
-                 aria-label="Auto path along roads"
-                 title="Auto path along roads"
-               >
-                 Auto
-               </button>
-               <button
-                 className="btn"
-                 onClick={() => startDraw("DRIVE_GPS")}
-                 aria-label="Record a GPS track"
-                 title="GPS track"
-               >
-                 GPS
-               </button>
-               <button
-                 className="btn primary"
-                 onClick={() => startDraw("MANUAL")}
-                 aria-label="Draw new fiber line"
-               >
-                 + Draw
-               </button>
+             <div className="map-hud bottom" style={{ justifyContent: "flex-end" }}>
+               <div className="dock">
+                 <button
+                   className="btn"
+                   onClick={() => startDraw("AUTO_PATH")}
+                   aria-label="Auto path along roads"
+                   title="Auto path along roads"
+                 >
+                   Auto
+                 </button>
+                 <button
+                   className="btn"
+                   onClick={() => startDraw("DRIVE_GPS")}
+                   aria-label="Record a GPS track"
+                   title="GPS track"
+                 >
+                   GPS
+                 </button>
+                 <button
+                   className="btn"
+                   onClick={() => {
+                     setNapMode((v) => !v);
+                     setPlaceMode(false);
+                   }}
+                   aria-pressed={napMode}
+                   aria-label="Place a NAP box"
+                   title="Place a NAP box"
+                 >
+                   NAP
+                 </button>
+                 <button
+                   className="btn primary"
+                   onClick={() => startDraw("MANUAL")}
+                   aria-label="Draw new fiber line"
+                 >
+                   + Draw
+                 </button>
+               </div>
              </div>
            )}
 
@@ -682,7 +758,7 @@ export default function App() {
             <div
               className="map-readout"
               role="status"
-              style={{ position: "absolute", top: 12, left: 12, zIndex: 5 }}
+              style={{ position: "absolute", top: 12, right: 12, zIndex: 5 }}
             >
               Adding the province basemap{" "}
               {(basemapProgress.received / 1_048_576).toFixed(1)} of{" "}
@@ -751,6 +827,8 @@ export default function App() {
                 repairLogs={repairLogs.filter((r) => r.lineId === selectedStats.line.id)}
                 chainageStyle={chainageStyle}
                 pinColor={pinColor}
+                otherWires={otherWires}
+                onOpenOtherWire={(id) => openLine(id)}
                 onBack={() => setOverlay("NONE")}
                 onViewOnMap={() => snapToMap(selectedStats.line)}
                 onFindByDistance={() => {
@@ -836,6 +914,7 @@ export default function App() {
             onClick={() => {
               setTab(key);
               setOverlay("NONE");
+              setNapMode(false);
             }}
           >
             <span className="icon" aria-hidden="true">
@@ -855,12 +934,39 @@ export default function App() {
         </button>
       </nav>
 
+      {wiresAtPoint && (
+        <WiresSheet
+          rows={wiresAtPoint
+            .map((id) => {
+              const s = linesWithStats.find((x) => x.line.id === id);
+              if (!s) return null;
+              return {
+                id,
+                name: s.line.name,
+                status: s.line.status,
+                colorKey: s.line.colorKey,
+                lengthLabel: formatChainage(s.line.lengthMapM, chainageStyle),
+                pins: s.totalPinsCount,
+                openCuts: s.openCuts,
+              };
+            })
+            .filter((r): r is WiresRow => r !== null)}
+          tappedId={wiresAtPoint[0] ?? null}
+          onPick={(id) => {
+            setFocusedLineId(id);
+            setWiresAtPoint(null);
+          }}
+          onClose={() => setWiresAtPoint(null)}
+        />
+      )}
+
       {selectedPin && (
         <PinSheet
           pin={selectedPin}
           lines={lines}
           events={events}
           chainageStyle={chainageStyle}
+          isNew={isNewPinRef.current}
           onClose={() => {
             const pin = selectedPin;
             setSelectedPin(null);
@@ -967,30 +1073,14 @@ export default function App() {
           lineName={slackDraft.lineName}
           chainageM={slackDraft.chainageM}
           chainageStyle={chainageStyle}
+          source={slackDraft.source}
           onCancel={() => setSlackDraft(null)}
           onSave={saveSlackLoop}
         />
       )}
 
       {toast && (
-        <div
-          role="status"
-          aria-live="polite"
-          style={{
-            position: "fixed",
-            left: "50%",
-            bottom: "calc(var(--nav-height) + var(--safe-bottom) + 16px)",
-            transform: "translateX(-50%)",
-            background: "var(--ink)",
-            color: "var(--paper)",
-            padding: "10px 16px",
-            borderRadius: 999,
-            fontSize: 13,
-            zIndex: 30,
-            maxWidth: "calc(100% - 32px)",
-            textAlign: "center",
-          }}
-        >
+        <div className="toast" role="status" aria-live="polite">
           {toast}
         </div>
       )}
@@ -1154,12 +1244,14 @@ function SlackLoopSheet({
   lineName,
   chainageM,
   chainageStyle,
+  source,
   onCancel,
   onSave,
 }: {
   lineName: string;
   chainageM: number;
   chainageStyle: boolean;
+  source: "GPS" | "MIDPOINT";
   onCancel: () => void;
   onSave: (totalM: number) => void | Promise<void>;
 }) {
@@ -1206,7 +1298,11 @@ function SlackLoopSheet({
           <div className="card stack" style={{ gap: 4 }}>
             <span className="small muted">{lineName}</span>
             <strong>{formatChainage(chainageM, chainageStyle)}</strong>
-            <span className="small muted">Your GPS position, snapped to the line.</span>
+            <span className="small muted">
+              {source === "GPS"
+                ? "Your GPS position, snapped to the line."
+                : "Middle of the line — no GPS fix near this route."}
+            </span>
           </div>
           <div className="field">
             <label htmlFor="slack-total">Total slack (m)</label>

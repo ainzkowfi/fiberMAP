@@ -1,92 +1,123 @@
 /*
-  fiberMAP field palette.
+  fiberMAP — "cable drum & splice sheet".
 
-  Purpose: this is a tool used outdoors, one-handed, in direct sun. Every
-  token here is chosen for contrast and glanceability, not for softness.
-  Density beats whitespace: a tech standing at a pole needs the numbers
-  large and the chrome quiet.
+  The world: a drum of fibre in a crew truck, and the printed splice sheet
+  that travels with it. Graphite is the tool and the truck; the work surface
+  is a clean white sheet; the only loud colour is the marker's yellow, used
+  when a tool is armed and waiting. Fibre colours (the IEC 60757 code) carry
+  the data, so the interface itself stays out of their way.
 
-  Three dials: ENERGY 1 / RHYTHM 2 / MOTION 1.
-  Read as: field-operations tool for line crews, utilitarian language,
-  sun-readable palette.
+  Read in the field, in sun, one-handed:
+  - Chrome is a solid graphite band. The map is the brightest thing on screen.
+  - Nothing animates. State changes are instant.
+  - Every measurement is tabular, and every measurement is the same size.
+  - One container level. Rows are rows; they are not cards inside cards.
 */
 
 :root {
-  /* Neutral spine. Cool greys, slight blue cast, so the status colours
-     below never look muddy against them. */
-  --paper: #eef1f3;
+  /* Ground and work surfaces. */
+  --paper: #e8ebed;
   --surface: #ffffff;
-  --surface-sunken: #e3e8ec;
-  --surface-variant: #d7dee3;
-  --ink: #0d1a20;
-  --ink-soft: #3d4d56;
-  /* Darkened from #5a6b74: the stat labels sit on --surface-variant, where
-     #5a6b74 only reached 4.08:1. This clears AA at 4.72:1 on the darkest
-     surface it is used on, and stays above 5.6:1 on paper. */
-  --muted: #51616b;
-  --border: #b9c5cc;
-  --border-strong: #7e9099;
+  --surface-sunken: #dee3e6;
+  --surface-variant: #e9edef;
 
-  /* Status colours. Cut red and repaired green are the two things a crew
-     scans for, so they are the most saturated things in the app. */
-  --cut: #b8231a;
-  --cut-soft: #fbe6e4;
+  /* Ink. */
+  --ink: #0d1519;
+  --ink-soft: #33424a;
+  --muted: #56666f;
+  --border: #c6ced3;
+  --border-strong: #7e8d95;
+
+  /* The shell: the graphite band the map sits in. */
+  --shell: #111b21;
+  --shell-ink: #e9eef1;
+  --shell-muted: #92a2ab;
+  --shell-line: #2a3941;
+
+  /* Marker's yellow: armed tools, live states, the focus ring. Never body
+     text, never a fill behind small type. */
+  --accent: #f2c200;
+  --accent-ink: #14181a;
+  --accent-soft: #fff6cd;
+
+  /* Status. Cut red and repaired green are the two things a crew scans for,
+     so they stay the most saturated colours in the app. */
+  --cut: #b4231a;
+  --cut-soft: #fbe9e7;
   --repaired: #14683c;
-  --repaired-soft: #dff0e6;
-  --planned: #7a5a12;
-  --planned-soft: #f7edd6;
+  --repaired-soft: #e0f1e8;
+  --planned: #3a5a80;
+  --planned-soft: #e6edf6;
 
-  /* The single accent: jacket teal, from the fibre jacket convention.
-     Used for actions and selection, never for decoration. */
+  /* The jacket teal: actions and selection only. */
   --jacket: #075e6b;
   --jacket-hover: #044a55;
-  --jacket-soft: #d7ebee;
+  --jacket-soft: #dcecee;
 
   --focus: #0b6fb8;
 
-  --radius: 6px;
-  --radius-sm: 4px;
+  --radius: 10px;
+  --radius-sm: 6px;
   --tap: 48px;
-  --nav-height: 64px;
+  --nav-height: 62px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
-  /* Elevation is used only to separate floating controls from the map.
-     Flat surfaces need no shadow. */
-  --shadow-float: 0 2px 6px rgb(13 26 32 / 22%);
-  --shadow-sheet: 0 -4px 24px rgb(13 26 32 / 24%);
+  /* One shadow, for things that float over the map. Flat surfaces get
+     separation from hairlines, not from blur. */
+  --shadow-float: 0 6px 18px rgb(13 21 25 / 18%);
+  --shadow-sheet: 0 -10px 40px rgb(13 21 25 / 26%);
 }
 
 [data-theme="dark"] {
-  --paper: #0c1418;
-  --surface: #162228;
-  --surface-sunken: #0f191d;
-  --surface-variant: #22333b;
-  --ink: #f2f6f7;
-  --ink-soft: #c3d0d6;
-  --muted: #93a4ad;
-  --border: #33474f;
-  --border-strong: #5d7580;
+  --paper: #0a1014;
+  --surface: #121a1f;
+  --surface-sunken: #0c1317;
+  --surface-variant: #1b262c;
 
-  --cut: #ff6a5c;
-  --cut-soft: #3a1c19;
-  --repaired: #4cd08a;
-  --repaired-soft: #13301f;
-  --planned: #e0b95c;
-  --planned-soft: #33290f;
+  --ink: #edf3f5;
+  --ink-soft: #c0cdd3;
+  --muted: #93a3ac;
+  --border: #2b3940;
+  --border-strong: #566a73;
 
-  --jacket: #35c4d8;
+  --shell: #050a0d;
+  --shell-ink: #dce5e9;
+  --shell-muted: #8595a0;
+  --shell-line: #223038;
+
+  --accent: #f2c200;
+  --accent-ink: #14181a;
+  --accent-soft: #33290a;
+
+  --cut: #ff8a7b;
+  --cut-soft: #3a1a17;
+  --repaired: #56d394;
+  --repaired-soft: #123021;
+  --planned: #9cc0e8;
+  --planned-soft: #16273a;
+
+  --jacket: #3fc8dc;
   --jacket-hover: #63d6e6;
-  --jacket-soft: #10353c;
+  --jacket-soft: #0f3b42;
 
   --focus: #5ab4ee;
 
-  --shadow-float: 0 2px 6px rgb(0 0 0 / 50%);
-  --shadow-sheet: 0 -4px 24px rgb(0 0 0 / 55%);
+  --shadow-float: 0 6px 18px rgb(0 0 0 / 55%);
+  --shadow-sheet: 0 -10px 40px rgb(0 0 0 / 60%);
 }
 
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Nothing in this app moves on its own. The map library fades its own
+   popups, so that is switched off too. */
+*,
+*::before,
+*::after {
+  transition: none !important;
+  animation: none !important;
 }
 
 html,
@@ -97,13 +128,14 @@ body,
 }
 
 body {
-  background: var(--paper);
+  background: var(--shell);
   color: var(--ink);
   font-family: "Segoe UI", Roboto, system-ui, -apple-system, sans-serif;
   font-size: 15px;
-  line-height: 1.4;
+  line-height: 1.45;
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -133,13 +165,13 @@ textarea {
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  padding: 11px 12px;
+  padding: 12px;
   width: 100%;
   min-height: var(--tap);
 }
 
 textarea {
-  min-height: 80px;
+  min-height: 88px;
   resize: vertical;
 }
 
@@ -155,7 +187,7 @@ textarea:focus-visible,
 button:focus-visible,
 a:focus-visible {
   outline: 3px solid var(--focus);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 /* ---------- App shell ---------- */
@@ -167,18 +199,17 @@ a:focus-visible {
   overflow: hidden;
 }
 
-/* Keyboard-only escape hatch past the header and the map controls. */
 .skip-link {
   position: absolute;
   top: -100px;
   left: 8px;
   z-index: 100;
-  padding: 8px 12px;
-  border-radius: 0 0 var(--radius) var(--radius);
-  background: var(--surface);
-  color: var(--ink);
+  padding: 10px 14px;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-ink);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   text-decoration: none;
 }
 
@@ -186,28 +217,43 @@ a:focus-visible {
   top: 0;
 }
 
+/* The shell band: graphite, one line, no ornament. The map is the only bright
+   surface on the phone. */
 .app-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 10px;
-  padding: 8px 12px;
-  background: var(--surface);
-  border-bottom: 2px solid var(--ink);
+  padding: 9px 14px;
+  background: var(--shell);
+  color: var(--shell-ink);
+  border-bottom: 1px solid var(--shell-line);
   flex: none;
 }
 
 .app-header h1 {
-  font-size: 16px;
+  font-size: 15px;
   margin: 0;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  font-weight: 800;
+  font-weight: 700;
+  flex: none;
 }
 
 .app-header .sub {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--shell-muted);
   margin: 0;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 359px) {
+  .app-header .sub {
+    display: none;
+  }
 }
 
 .app-body {
@@ -217,9 +263,7 @@ a:focus-visible {
 }
 
 /* The map stays mounted across tab switches so the WebGL context and the
-   decoded basemap tiles survive. Only visibility changes: the `hidden`
-   attribute would collapse the canvas to 0x0 and MapLibre would re-fit the
-   viewport, scrambling the zoom level. */
+   decoded basemap tiles survive. Only visibility changes. */
 .map-layer {
   position: absolute;
   inset: 0;
@@ -232,7 +276,6 @@ a:focus-visible {
   pointer-events: none;
 }
 
-/* Panels sit over the map. Opaque so the canvas never bleeds through. */
 .panel {
   position: absolute;
   inset: 0;
@@ -242,11 +285,25 @@ a:focus-visible {
   -webkit-overflow-scrolling: touch;
 }
 
+/* On a phone the sheet fills the width. On a desktop it becomes a record
+   column, so the lines of text keep a readable measure. */
+@media (min-width: 700px) {
+  .panel {
+    display: flex;
+    justify-content: center;
+  }
+
+  .panel > * {
+    width: 100%;
+    max-width: 620px;
+  }
+}
+
 .app-nav {
   display: flex;
   flex: none;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
+  background: var(--shell);
+  border-top: 1px solid var(--shell-line);
   padding-bottom: var(--safe-bottom);
 }
 
@@ -254,33 +311,56 @@ a:focus-visible {
   flex: 1;
   min-height: var(--nav-height);
   border: 0;
-  border-top: 3px solid transparent;
   background: transparent;
-  color: var(--muted);
+  color: var(--shell-muted);
   font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-weight: 600;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 6px 4px;
+  gap: 5px;
+  padding: 8px 4px;
+  position: relative;
 }
 
 .app-nav button[aria-current="page"] {
-  color: var(--jacket);
-  border-top-color: var(--jacket);
+  color: var(--shell-ink);
+}
+
+/* The active tab is marked with the marker's yellow, the one colour in the
+   app that means "this is live". */
+.app-nav button[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 22%;
+  right: 22%;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 0 0 2px 2px;
 }
 
 .app-nav .icon {
-  font-size: 20px;
-  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   height: 22px;
+}
+
+/* On a desktop the bar stops being a thumb bar and becomes a menu. */
+@media (min-width: 700px) {
+  .app-header {
+    justify-content: center;
+  }
+
+  .app-nav {
+    justify-content: center;
+  }
+
+  .app-nav button {
+    flex: 0 0 140px;
+  }
 }
 
 /* ---------- Primitives ---------- */
@@ -289,9 +369,10 @@ a:focus-visible {
   min-height: var(--tap);
   border: 1px solid var(--border-strong);
   background: var(--surface);
+  color: var(--ink);
   border-radius: var(--radius);
-  padding: 0 14px;
-  font-weight: 700;
+  padding: 0 16px;
+  font-weight: 600;
   font-size: 14px;
   display: inline-flex;
   align-items: center;
@@ -301,10 +382,6 @@ a:focus-visible {
 
 .btn:hover:not(:disabled) {
   border-color: var(--ink);
-}
-
-.btn:active:not(:disabled) {
-  transform: translateY(1px);
 }
 
 .btn.primary {
@@ -322,19 +399,22 @@ a:focus-visible {
   border-color: var(--jacket-hover);
 }
 
+/* A destructive action is outlined, not filled: it must be reachable in a
+   hurry without being the loudest thing on the sheet. */
 .btn.danger {
-  background: var(--cut);
+  background: transparent;
   border-color: var(--cut);
-  color: #ffffff;
+  color: var(--cut);
 }
 
 [data-theme="dark"] .btn.danger {
-  color: #2a0906;
+  color: #ff8a7b;
 }
 
 .btn.ghost {
   background: transparent;
   border-color: transparent;
+  color: var(--ink-soft);
 }
 
 .btn.ghost:hover:not(:disabled) {
@@ -342,27 +422,30 @@ a:focus-visible {
 }
 
 .btn:disabled {
-  opacity: 0.4;
+  opacity: 0.38;
 }
 
 .btn.block {
   width: 100%;
 }
 
-/* Panels: flat with a hard edge. Cards float on paper; panels sit on it.
-   No accent stripe on the left edge: every card carries a hard border all
-   the way round, so a one-sided bar would be decoration with nothing to say. */
+.btn.grow {
+  flex: 1;
+}
+
+/* One container level. A card is the sheet the work sits on; rows inside it
+   are rows, never smaller cards. */
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 13px 14px;
+  padding: 16px;
 }
 
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .row {
@@ -394,18 +477,29 @@ a:focus-visible {
   height: 100%;
 }
 
-/* Status tags carry meaning, not decoration, so they stay square-cornered
-   with a tinted fill instead of soft pills. */
+/* Section headings inside a sheet: quiet, but not decoration. */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.section-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .tag {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 7px;
-  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  border-radius: 999px;
   font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
+  font-weight: 700;
   background: var(--surface-variant);
   color: var(--ink-soft);
   white-space: nowrap;
@@ -433,36 +527,35 @@ a:focus-visible {
 
 .chips {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .chip {
   border: 1px solid var(--border-strong);
   background: var(--surface);
-  border-radius: var(--radius-sm);
-  padding: 9px 12px;
-  font-size: 12px;
-  font-weight: 700;
+  border-radius: 999px;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--ink-soft);
-  min-height: 40px;
+  min-height: 42px;
 }
 
 .chip[aria-pressed="true"] {
-  background: var(--jacket);
-  border-color: var(--jacket);
-  color: #ffffff;
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
 }
 
 [data-theme="dark"] .chip[aria-pressed="true"] {
-  color: #06181c;
+  color: var(--ink);
 }
 
 /* ---------- Readouts ---------- */
 
 /* The four numbers a tech reads off a line record. One row, divided by
-   hairlines, so the screen reads as a record sheet and not a dashboard of
-   tiles. */
+   hairlines, so the screen reads as a record sheet and not a dashboard. */
 .figures {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -471,7 +564,7 @@ a:focus-visible {
 }
 
 .figures > div {
-  padding: 8px 4px;
+  padding: 10px 4px;
   text-align: center;
   border-right: 1px solid var(--border);
 }
@@ -483,16 +576,17 @@ a:focus-visible {
 .figures .k {
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.08em;
   color: var(--muted);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .figures .v {
   font-size: 16px;
-  font-weight: 800;
-  margin-top: 1px;
+  font-weight: 700;
+  margin-top: 2px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 @media (max-width: 359px) {
@@ -513,7 +607,7 @@ a:focus-visible {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 7px 0;
+  padding: 9px 0;
   border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
@@ -538,21 +632,17 @@ a:focus-visible {
   inset: 0;
 }
 
-/* Added by MapLibre to its container at runtime. */
 .maplibregl-map {
   font: inherit;
 }
 
-/* The bubble that opens when a line is tapped. MapLibre's own popup is a
-   white box with a grey border; this uses the app's surfaces so it reads as
-   part of the same tool. */
 .maplibregl-popup-content {
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--ink);
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-sheet);
+  box-shadow: var(--shadow-float);
 }
 
 .maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
@@ -560,7 +650,7 @@ a:focus-visible {
 }
 
 .bubble {
-  min-width: 168px;
+  min-width: 176px;
   font-size: 13px;
 }
 
@@ -568,7 +658,7 @@ a:focus-visible {
   position: absolute;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   z-index: 5;
 }
 
@@ -584,10 +674,8 @@ a:focus-visible {
   align-items: flex-start;
 }
 
-/* The draw controls stack above the map's own control row, so the two never
-   sit on the same line on a phone. */
 .map-hud.bottom {
-  bottom: 68px;
+  bottom: 74px;
   left: 12px;
   right: 12px;
   flex-direction: row;
@@ -601,8 +689,49 @@ a:focus-visible {
   pointer-events: auto;
 }
 
-/* Square, high-contrast map controls. Glassy circular buttons wash out in
-   sunlight and cost contrast. */
+/* The action dock: one raised surface holding the map's tools, so the map
+   edge carries a single object instead of a row of loose buttons. */
+.dock {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-float);
+}
+
+.dock .btn {
+  border-color: transparent;
+  background: transparent;
+  border-radius: 10px;
+  padding: 0 14px;
+}
+
+.dock .btn:hover:not(:disabled) {
+  background: var(--surface-variant);
+}
+
+.dock .btn.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+[data-theme="dark"] .dock .btn.primary {
+  color: var(--surface);
+}
+
+/* A tool that is armed waits for the next tap, and says so in the
+   marker's yellow. */
+.dock .btn[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Square, high-contrast map controls. */
 .fab {
   width: var(--tap);
   height: var(--tap);
@@ -610,8 +739,6 @@ a:focus-visible {
   border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--ink);
-  font-size: 22px;
-  font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -632,26 +759,43 @@ a:focus-visible {
   color: #06181c;
 }
 
-.fab.danger {
-  background: var(--cut);
-  border-color: var(--cut);
-  color: #ffffff;
-}
-
 .map-readout {
   position: absolute;
   top: 12px;
-  left: 12px;
+  right: 12px;
   background: var(--surface);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 5px 9px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--ink-soft);
 }
 
+/* The toast is a small strip in the top-right, where it never covers the
+   map's tools or the crew's thumb. */
+.toast {
+  position: fixed;
+  top: 46px;
+  right: 12px;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 9px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 30;
+  max-width: calc(100% - 24px);
+  text-align: center;
+}
+
+[data-theme="dark"] .toast {
+  color: var(--surface);
+}
+
+/* The banner is a strip of the map's own chrome: it states what the next
+   tap will do. */
 .draw-banner {
   position: absolute;
   top: 10px;
@@ -661,15 +805,272 @@ a:focus-visible {
   background: var(--ink);
   color: var(--paper);
   border-radius: var(--radius);
-  padding: 9px 14px;
+  padding: 8px 14px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   max-width: calc(100% - 24px);
   text-align: center;
 }
 
-/* Municipality names as DOM markers: MapLibre symbol layers would need a
-   glyph server, which would break offline use. */
+[data-theme="dark"] .draw-banner {
+  color: var(--surface);
+}
+
+/* ---------- The chainage tape ---------- */
+
+/* The signature move: the line as a measuring tape. Chainage is the spine of
+   every record in this app, so it gets drawn as one. */
+.tape {
+  position: relative;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.tape-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 26px;
+  height: 6px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.tape-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 27px;
+  height: 4px;
+}
+
+.tape-tick {
+  position: absolute;
+  top: 18px;
+  width: 1px;
+  height: 5px;
+  background: var(--border-strong);
+}
+
+.tape-tick.major {
+  top: 12px;
+  height: 11px;
+  background: var(--muted);
+}
+
+.tape-label {
+  position: absolute;
+  top: 1px;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.tape-mark {
+  position: absolute;
+  top: 34px;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border-radius: 3px;
+  border: 2px solid var(--surface);
+  transform: translateX(-50%) rotate(45deg);
+  box-shadow: 0 0 0 1px rgb(13 21 25 / 35%);
+}
+
+.tape-mark.round {
+  border-radius: 50%;
+}
+
+button.tape-mark {
+  cursor: pointer;
+  appearance: none;
+}
+
+.tape-caption {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+/* The line's chainage tape, riding above the action dock when a line is
+   picked. It is information, not chrome: it only exists while a line is
+   selected. */
+.map-tape {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 140px;
+  z-index: 5;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-float);
+  padding: 10px 12px 12px;
+}
+
+.map-tape-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+/* ---------- Pins on the map ---------- */
+
+/* Every pin type has its own shape, so a crew reads the map by shape first
+   and colour second. The white shell under the colour is the halo that keeps
+   a pin readable over any tile. */
+.pin {
+  --pin-scale: 1;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 0;
+  padding: 0;
+  flex: none;
+  pointer-events: none;
+  transform: scale(var(--pin-scale));
+  filter: drop-shadow(0 1px 2px rgb(13 21 25 / 45%));
+}
+
+/* The marker element MapLibre positions: a transparent hit target around the
+   shape, because MapLibre owns that element's transform. */
+.pin-hit {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.pin-core {
+  width: 13px;
+  height: 13px;
+  background: var(--pin-color);
+  display: block;
+}
+
+.pin.selected {
+  --pin-scale: 1.3;
+}
+
+.pin-circle {
+  border-radius: 50%;
+}
+
+.pin-circle .pin-core {
+  border-radius: 50%;
+}
+
+.pin-square {
+  border-radius: 3px;
+}
+
+.pin-square .pin-core {
+  border-radius: 2px;
+}
+
+.pin-diamond {
+  transform: rotate(45deg) scale(var(--pin-scale));
+}
+
+.pin-triangle {
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+}
+
+.pin-triangle .pin-core {
+  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+}
+
+.pin-hexagon {
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+
+.pin-hexagon .pin-core {
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+
+.pin-dot .pin-core {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+/* The key that floats on the map. */
+.map-legend {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.legend-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
+  padding: 10px 12px;
+  max-width: 210px;
+}
+
+.legend-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  padding: 3px 0;
+}
+
+.legend-hint {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.legend-swatch {
+  width: 18px;
+  height: 18px;
+  filter: none;
+}
+
+.legend-swatch .pin-core {
+  width: 11px;
+  height: 11px;
+}
+
+/* ---------- Labels on the map ---------- */
+
 .map-label {
   font-size: 10px;
   font-weight: 700;
@@ -688,8 +1089,13 @@ a:focus-visible {
   opacity: 1;
 }
 
-/* A name the crew wrote. It has to stand out from the map and be tappable to
-   rename, so it is a button in the app's own colour. */
+.map-label.place {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  opacity: 0.75;
+}
+
 .map-label.crew {
   pointer-events: auto;
   cursor: default;
@@ -707,6 +1113,10 @@ a:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+[data-theme="dark"] .map-label.crew {
+  color: #06181c;
 }
 
 .map-label.crew .map-label-name {
@@ -730,12 +1140,8 @@ a:focus-visible {
   line-height: 1;
 }
 
-.map-label.crew .map-label-edit:hover {
-  opacity: 1;
-}
-
-/* The map controls sit just above the bottom nav bar, where the thumb
-   reaches them without stretching. Zoom is left to the pinch gesture. */
+/* The map's own control row sits just above the bottom nav, where the thumb
+   reaches it without stretching. */
 .map-bottom-bar {
   position: absolute;
   bottom: 12px;
@@ -759,16 +1165,6 @@ a:focus-visible {
   flex: none;
 }
 
-/* Place names from the archive: quieter than the municipality names, because
-   they are the smaller places. */
-.map-label.place {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--ink-soft);
-  opacity: 0.75;
-}
-
-
 /* The basemap is OpenStreetMap data. The credit stays on the map as a chip
    of the app's own surface so it is readable over any tile. */
 .map-attrib {
@@ -783,16 +1179,12 @@ a:focus-visible {
   pointer-events: none;
 }
 
-[data-theme="dark"] .map-label.crew {
-  color: #06181c;
-}
-
 /* ---------- Sheets / modals ---------- */
 
 .scrim {
   position: fixed;
   inset: 0;
-  background: rgb(13 26 32 / 55%);
+  background: rgb(9 15 18 / 62%);
   z-index: 20;
   display: flex;
   align-items: flex-end;
@@ -804,7 +1196,7 @@ a:focus-visible {
   width: 100%;
   max-width: 560px;
   max-height: 90vh;
-  border-radius: var(--radius) var(--radius) 0 0;
+  border-radius: 16px 16px 0 0;
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-sheet);
@@ -814,8 +1206,9 @@ a:focus-visible {
   .scrim {
     align-items: center;
   }
+
   .sheet {
-    border-radius: var(--radius);
+    border-radius: 16px;
     max-height: 86vh;
   }
 }
@@ -824,31 +1217,29 @@ a:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
-  border-bottom: 2px solid var(--ink);
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
   flex: none;
 }
 
 .sheet-head h2 {
   margin: 0;
-  font-size: 15px;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-  font-weight: 800;
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .sheet-body {
-  padding: 14px;
+  padding: 16px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .sheet-foot {
   display: flex;
-  gap: 8px;
-  padding: 10px 14px calc(10px + var(--safe-bottom));
+  gap: 10px;
+  padding: 12px 16px calc(12px + var(--safe-bottom));
   border-top: 1px solid var(--border);
   flex: none;
 }
@@ -860,38 +1251,100 @@ a:focus-visible {
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .field label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+/* ---------- Detail sheets ---------- */
+
+/* The name of the thing the sheet is about. It carries the sheet; nothing
+   above it competes. */
+.detail-title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+/* A group of facts under one quiet label. */
+.detail-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 12px 6px;
+  background: var(--surface-sunken);
+}
+
+.detail-label {
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.08em;
   color: var(--muted);
+  padding: 10px 0 2px;
+}
+
+.detail-group .kv:last-child {
+  border-bottom: 0;
+}
+
+/* A tertiary action: quieter than a button, still a 48px target. */
+.link-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: 6px;
+  padding: 10px 2px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border);
+  text-align: left;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* The ends of the focused line. */
+.end-mark {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--ink);
+  border-radius: 3px;
+  padding: 1px 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow-float);
 }
 
 /* ---------- Lists ---------- */
 
-/* Rows carry their own colour swatch for the fibre strand. A second stripe
-   on the edge would be decoration with nothing to say. */
+/* A row is a row: no border, no card. Separators do the work. */
 .list-item {
   display: flex;
-  gap: 11px;
+  gap: 12px;
   align-items: center;
   width: 100%;
   text-align: left;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 11px 12px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 2px;
+}
+
+.list-item:last-child {
+  border-bottom: 0;
 }
 
 .list-item:hover {
-  border-color: var(--border-strong);
-}
-
-.list-item:active {
   background: var(--surface-variant);
 }
 
@@ -906,17 +1359,17 @@ a:focus-visible {
 
 .empty {
   text-align: center;
-  padding: 40px 20px;
+  padding: 44px 20px;
   color: var(--muted);
   font-size: 14px;
 }
 
 .timeline {
   border-left: 2px solid var(--border);
-  padding-left: 12px;
+  padding-left: 14px;
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: 12px;
 }
 
 .timeline .dot {
@@ -924,7 +1377,7 @@ a:focus-visible {
   height: 9px;
   border-radius: 50%;
   background: var(--jacket);
-  margin-left: -17px;
+  margin-left: -19px;
   margin-top: 5px;
   border: 2px solid var(--surface);
 }
@@ -946,7 +1399,7 @@ a:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .qr-frame img {
@@ -954,16 +1407,6 @@ a:focus-visible {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: #fff;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
 }
 
 @media print {
@@ -979,9 +1422,9 @@ a:focus-visible {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: var(--jacket);
-  color: #ffffff;
-  border: 2px solid #ffffff;
+  background: var(--ink);
+  color: var(--paper);
+  border: 2px solid var(--surface);
   font-size: 11px;
   font-weight: 800;
   display: flex;
@@ -991,8 +1434,4 @@ a:focus-visible {
   box-shadow: var(--shadow-float);
   pointer-events: auto;
   user-select: none;
-}
-
-.draw-vertex-label:hover {
-  background: var(--danger);
 }

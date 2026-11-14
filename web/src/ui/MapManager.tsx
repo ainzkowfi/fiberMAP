@@ -151,7 +151,6 @@ export function MapManager({
                       progress.total ? Math.min(1, progress.received / progress.total) : 0
                     })`,
                     transformOrigin: "left",
-                    transition: "transform 120ms linear",
                   }}
                 />
               </div>

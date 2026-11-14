@@ -2,7 +2,14 @@ import type { FiberPin, LineWithStats, RepairLog } from "../domain/models";
 import { LINE_STATUS_TITLE, REPAIR_METHOD_TITLE } from "../domain/models";
 import { formatChainage } from "../core/geometry";
 import { pinLabelParts } from "../domain/labels";
-import { StripView } from "./StripView";
+import { getFiberColor } from "../data/reference";
+import { ChainageTape } from "./ChainageTape";
+
+export interface OtherWire {
+  id: string;
+  name: string;
+  lengthLabel: string;
+}
 
 export interface LineDetailProps {
   stats: LineWithStats;
@@ -10,12 +17,15 @@ export interface LineDetailProps {
   repairLogs: RepairLog[];
   chainageStyle: boolean;
   pinColor: (pin: FiberPin) => string;
+  /** Other lines recorded along the same path as this one. */
+  otherWires: OtherWire[];
   onBack: () => void;
   onViewOnMap: () => void;
   onFindByDistance: () => void;
   onContinueLine: () => void;
   onAddSlackLoop: () => void;
   onPinClicked: (pin: FiberPin) => void;
+  onOpenOtherWire: (lineId: string) => void;
   onDeleteLine: () => void;
 }
 
@@ -33,12 +43,14 @@ export function LineDetail({
   repairLogs,
   chainageStyle,
   pinColor,
+  otherWires,
   onBack,
   onViewOnMap,
   onFindByDistance,
   onContinueLine,
   onAddSlackLoop,
   onPinClicked,
+  onOpenOtherWire,
   onDeleteLine,
 }: LineDetailProps) {
   const line = stats.line;
@@ -62,11 +74,13 @@ export function LineDetail({
             {line.fiberType} · {line.coreCount ?? 24} cores
           </p>
 
-          <StripView
-            stats={stats}
+          <ChainageTape
+            lengthM={line.lengthMapM}
             pins={pins}
             pinColor={pinColor}
+            lineColor={getFiberColor(line.colorKey)}
             chainageStyle={chainageStyle}
+            onPinClick={onPinClicked}
           />
 
           <div className="figures" style={{ marginTop: 12 }}>
@@ -103,10 +117,34 @@ export function LineDetail({
               Find by OTDR
             </button>
           </div>
-          <button className="btn block" onClick={onContinueLine}>
-            Continue drawing this line
+          <button className="link-action" onClick={onContinueLine}>
+            Extend this line
+            <span className="small muted">draw more corners onto the same route</span>
           </button>
         </div>
+
+        {otherWires.length > 0 && (
+          <div className="card">
+            <div className="section-head">
+              <h3>Other wires on this path ({otherWires.length})</h3>
+            </div>
+            <div className="detail-group">
+              {otherWires.map((wire) => (
+                <button
+                  key={wire.id}
+                  className="list-item"
+                  onClick={() => onOpenOtherWire(wire.id)}
+                >
+                  <span className="grow" style={{ textAlign: "left" }}>
+                    <span style={{ fontWeight: 600, display: "block" }}>{wire.name}</span>
+                    <span className="small muted">{wire.lengthLabel}</span>
+                  </span>
+                  <span className="small muted">Open</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {line.notes && (
           <div className="card">
@@ -115,9 +153,9 @@ export function LineDetail({
         )}
 
         <div className="card">
-          <div className="row between" style={{ marginBottom: 8 }}>
-            <strong>Slack loops ({slackLoops.length})</strong>
-            <span className="small muted">{Math.round(totalSlackM)} m available</span>
+          <div className="section-head">
+            <h3>Slack loops ({slackLoops.length})</h3>
+            <span className="small muted">{Math.round(totalSlackM)} m spare</span>
           </div>
           {slackLoops.length === 0 ? (
             <div className="small muted">No slack loops recorded.</div>
@@ -158,8 +196,8 @@ export function LineDetail({
         </div>
 
         <div className="card">
-          <div className="row between" style={{ marginBottom: 8 }}>
-            <strong>Pins ({otherPins.length})</strong>
+          <div className="section-head">
+            <h3>Pins ({otherPins.length})</h3>
           </div>
           {otherPins.length === 0 ? (
             <div className="small muted">No other pins on this line yet.</div>
@@ -194,7 +232,9 @@ export function LineDetail({
         </div>
 
         <div className="card">
-          <strong>Repair log ({repairLogs.length})</strong>
+          <div className="section-head">
+            <h3>Repair log ({repairLogs.length})</h3>
+          </div>
           {repairLogs.length === 0 ? (
             <div className="small muted" style={{ marginTop: 6 }}>
               No closed repairs recorded.

@@ -12,10 +12,10 @@ export type MapTheme = "light" | "dark";
  */
 export const MAP_COLORS: Record<MapTheme, Record<string, string>> = {
   light: {
-    background: "#eef1f3",
-    muni: "#6f7f89",
+    background: "#e8ebed",
+    muni: "#6b7a84",
     casing: "#ffffff",
-    roadCasing: "#c9d2d8",
+    roadCasing: "#ccd4d9",
     otdr: "#ff9800",
     draw: "#0a7c8c",
     me: "#1e88e5",
@@ -24,15 +24,15 @@ export const MAP_COLORS: Record<MapTheme, Record<string, string>> = {
     boundary: "#a8814d",
   },
   dark: {
-    background: "#0c1418",
+    background: "#0a1014",
     muni: "#93a4ad",
-    casing: "#162228",
-    roadCasing: "#2a353b",
+    casing: "#33454e",
+    roadCasing: "#435661",
     otdr: "#ffb74d",
     draw: "#35c4d8",
     me: "#5ab4ee",
-    landuse: "#1b2620",
-    water: "#1d3749",
+    landuse: "#16211b",
+    water: "#17303f",
     boundary: "#8a6a3f",
   },
 };
@@ -82,7 +82,6 @@ export const THEME_PAINT: Array<[string, ThemePaintName, string]> = [
   ["otdr-band", "line-color", "otdr"],
   ["draw-verts", "circle-color", "draw"],
   ["draw-verts", "circle-stroke-color", "casing"],
-  ["fib-pin", "circle-stroke-color", "casing"],
   ["me-halo", "circle-color", "me"],
   ["me-dot", "circle-color", "me"],
   ["me-dot", "circle-stroke-color", "casing"],
